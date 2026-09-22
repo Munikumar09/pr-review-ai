@@ -1,7 +1,10 @@
 # Package only runtime assets and public documentation.
+# README.md is intentionally NOT allow-listed here: `npm run package` passes
+# --readme-path MARKETPLACE.md, which vsce writes into the package's own
+# readme.md slot. Bundling README.md too would collide with it (VSIX is a
+# case-insensitive zip) and would leak dev-only content into the install.
 **/*
 !package.json
-!README.md
 !CHANGELOG.md
 !SECURITY_REVIEW.md
 !LICENSE

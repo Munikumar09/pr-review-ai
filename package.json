@@ -3,7 +3,7 @@
   "displayName": "Azure DevOps AI PR Review",
   "description": "Review Azure DevOps pull requests without leaving VS Code, with optional AI-assisted findings that require explicit human approval before publishing.",
   "version": "0.5.0",
-  "publisher": "local-dev",
+  "publisher": "munikumarmm",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -471,7 +471,7 @@
     "format": "prettier --write \"src/**/*.ts\"",
     "test": "vitest run",
     "test:watch": "vitest",
-    "package": "vsce package"
+    "package": "vsce package --readme-path MARKETPLACE.md"
   },
   "devDependencies": {
     "@types/diff": "^5.2.1",

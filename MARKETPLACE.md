@@ -5,11 +5,6 @@ diffs with the native diff editor, read and add comments, and optionally run
 an AI-assisted review whose findings must be explicitly approved by a human
 before anything is published back to Azure DevOps.
 
-> This is the source repository's README (architecture, development,
-> testing, packaging). The page shown on the VS Code Marketplace is
-> [`MARKETPLACE.md`](MARKETPLACE.md) — a trimmed, end-user-only version with
-> no build instructions. Update both when user-facing behavior changes.
-
 ## Features
 
 - Connect to Azure DevOps with a Personal Access Token (stored in VS Code
@@ -48,47 +43,9 @@ before anything is published back to Azure DevOps.
 - Large-PR safeguards: above ~100 files or ~10k changed lines, you're asked
   to narrow the review scope instead of reviewing everything at once.
 
-## Architecture
-
-```
-src/
-├── extension.ts          entry point: wiring only
-├── commands/              command handlers (thin, delegate to managers)
-├── azure/                 Azure DevOps REST integration + normalization
-├── ai/                    AI provider abstraction + review pipeline
-│   └── providers/         Mock, OpenCode, Copilot (vscode.lm)
-├── review/                review session state, approval, publishing gate
-├── diff/                  native VS Code diff wiring, file-tree builder
-├── views/                 TreeDataProviders (UI only, no API calls)
-├── webview/                PR dashboard + findings panel
-├── models/                 normalized domain types
-├── config/                 typed Configuration wrapper
-├── storage/                in-memory cache + review session persistence
-└── utils/                  logger, errors, line mapping, secret detection
-```
-
-Azure DevOps and AI providers never reference each other directly — both
-sides only exchange normalized models (`PullRequest`, `ReviewFinding`,
-`ReviewContext`, ...). This means a new AI provider or a future Azure
-DevOps auth method (OAuth/Entra ID) can be added without touching the other
-side.
-
-```
-                    Application Core (review/, ai/AIReviewOrchestrator)
-                          │
-             ┌────────────┴────────────┐
-             │                         │
-      Azure DevOps                  AI Review
-      (azure/*Service)              (AIReviewProvider)
-             │                         │
-             ▼                         ▼
-      AzureDevOpsClient        Mock / OpenCode / Copilot
-```
-
 ## Requirements
 
 - VS Code 1.85+
-- Node.js 24 LTS (for building and running the development tools)
 - An Azure DevOps organization, project, and Git repository you have access to
 - A Personal Access Token with **Code (Read & Write)** and **Pull Request**
   scopes
@@ -96,36 +53,6 @@ side.
   OpenCode AI provider
 - Optional: GitHub Copilot Chat installed and signed in, for the Copilot
   provider (uses the supported `vscode.lm` Language Model API)
-
-## Installation
-
-### From the Marketplace
-
-Search **Azure DevOps AI PR Review** in the Extensions view, or install
-directly from
-[the Marketplace listing](https://marketplace.visualstudio.com/items?itemName=munikumarmm.azure-pr-review).
-This is the recommended way to install it — the rest of this README covers
-building from source, which is only needed for development.
-
-### From source (VSIX)
-
-```bash
-npm install
-npm run package        # produces azure-pr-review-<version>.vsix
-```
-
-In VS Code: **Extensions view → "..." menu → Install from VSIX...** and
-select the generated file.
-
-### For development
-
-```bash
-npm install
-npm run compile
-```
-
-Then press `F5` in VS Code (uses `.vscode/launch.json`) to launch an
-Extension Development Host with the extension loaded.
 
 ## Azure DevOps setup
 
@@ -138,13 +65,9 @@ Extension Development Host with the extension loaded.
 
 ## Authentication
 
-The current implementation uses a Personal Access Token, stored exclusively
-via VS Code's `SecretStorage` API — it is never written to `settings.json`,
-workspace files, `.env` files, source code, or logs.
-
-Authentication is defined behind the `AzureDevOpsAuthProvider` interface
-(`src/azure/AzureDevOpsAuth.ts`), so an OAuth/Microsoft Entra ID flow can be
-added later without changing `AzureDevOpsClient` or anything above it.
+Sign-in uses a Personal Access Token, stored exclusively in VS Code's secure
+credential storage — it is never written to settings, workspace files, or
+logs.
 
 ## OpenCode setup
 
@@ -155,34 +78,19 @@ added later without changing `AzureDevOpsClient` or anything above it.
    `<command> --version` first and shows a clear error if OpenCode isn't
    found, rather than failing silently.
 
-The OpenCode provider (`src/ai/providers/OpenCodeProvider.ts`) invokes the
-CLI as a child process, feeding it the review prompt over stdin and reading
-structured JSON from stdout. It enforces a timeout, supports cancellation,
-never logs prompt/response content (which may contain proprietary source),
-and surfaces non-zero exit codes as user-facing errors.
-
-The CLI must support `run --format json --pure --agent`, inline configuration,
-and deny-all permissions. Each invocation uses an empty temporary directory;
-reviews select a dedicated agent with every tool denied. External plugins,
-project configuration, and automatic session sharing are disabled. The extension
-never retries with weaker permissions if that invocation fails.
-
-This uses OpenCode's permission enforcement, not an operating-system sandbox.
-Use a trusted, current CLI installation. The CLI's user/administrator settings,
-authentication, local session retention and model provider's data policies remain
-part of your trusted environment. The CLI is not bundled with the extension.
+Each review runs in an isolated temporary directory with a dedicated,
+permission-denied agent — external plugins, project configuration, and
+automatic session sharing are all disabled, and the extension never retries
+with weaker permissions. This relies on OpenCode's own permission
+enforcement, not an operating-system sandbox: use a trusted, current CLI
+installation. The CLI is not bundled with the extension.
 
 ## Configuration
 
-Connection, provider, model, custom instructions and secret-detection choices are
-read from **user settings**. The OpenCode executable is a machine setting and may
-be an absolute path or a command on `PATH`; workspace-relative executables are
-rejected. Repository `.vscode/settings.json` cannot override these choices.
-
-Changing the organization, project or repository requires **Reload Window**.
-Reviews and drafts are stored separately for each connection. Legacy review/draft
-state without a repository identity is retained in VS Code storage but is no
-longer restored automatically; re-create those reviews before publishing.
+Connection, provider, model, custom instructions and secret-detection choices
+are read from **user settings**, so a repository's own `.vscode/settings.json`
+cannot override them. Changing the organization, project or repository
+requires **Reload Window**.
 
 | Setting | Default | Description |
 |---|---|---|
@@ -195,7 +103,7 @@ longer restored automatically; re-create those reviews before publishing.
 | `azurePrReview.ai.reviewCategories` | bug/security/performance/maintainability/testing | Categories the AI should focus on |
 | `azurePrReview.ai.customInstructions` | `""` | Extra instructions appended to the built-in review prompt (multi-line). Edit via **Azure PR Review: Edit Custom Review Prompt** |
 | `azurePrReview.ai.includeAttributionInComments` | `true` | Label published comments as AI-generated with confidence/provider. Toggle via **Azure PR Review: Toggle AI Attribution in Published Comments** |
-| `azurePrReview.opencode.command` | `"opencode"` | Executable used for the OpenCode provider (machine-scoped; must be absolute or resolvable on `PATH`) |
+| `azurePrReview.opencode.command` | `"opencode"` | Executable used for the OpenCode provider (must be absolute or resolvable on `PATH`) |
 | `azurePrReview.opencode.model` | `""` | Model passed to OpenCode as `provider/model`. Empty uses OpenCode's own default. Set via **Azure PR Review: Select AI Model** |
 | `azurePrReview.copilot.model` | `""` | Preferred Copilot chat model id/family. Empty uses the first available model. Set via **Azure PR Review: Select AI Model** |
 | `azurePrReview.logging.level` | `"info"` | Output channel verbosity |
@@ -257,90 +165,28 @@ longer restored automatically; re-create those reviews before publishing.
 - PR content is treated as **untrusted data**: the AI prompt explicitly
   instructs the model to never follow instructions embedded in repository
   content and to never reveal credentials/secrets, even if content in the PR
-  asks it to (see `prompts/code-review.md`).
+  asks it to.
 - The extension never executes code from the PR (no automatic
   `npm install`, `pip install`, `make`, test runs, etc.).
-- AI line numbers are never trusted blindly — `src/utils/lineMapping.ts`
-  validates every finding against the PR's actual diff hunks before it can
-  be published; unmappable findings are blocked with a clear message.
-- A best-effort secret scanner (`src/utils/secretDetection.ts`) flags
-  API keys, private keys, bearer tokens, AWS keys, connection strings, and
-  similar patterns before content leaves VS Code for an AI provider. This is
-  a warning, not a guarantee.
+- AI line numbers are never trusted blindly — every finding is validated
+  against the PR's actual diff before it can be published; unmappable
+  findings are blocked with a clear message.
+- A best-effort secret scanner flags API keys, private keys, bearer tokens,
+  AWS keys, connection strings, and similar patterns before content leaves
+  VS Code for an AI provider. This is a warning, not a guarantee.
 - Only explicitly approved AI findings can be published. Editing a finding
   requires a fresh approval, and editing its line range invalidates the mapping.
 - Secret scanning checks the actual outbound prompt, including deleted diff
   lines, PR metadata, existing comments and custom instructions. A warning is
   accepted only through the explicit **Send to AI Provider** action.
-- Webviews use nonce-based scripts, escaped content, validated messages and no
-  local resource access. Untrusted tooltips and AI comment text render literally.
-- Network file downloads and AI responses are capped at 2 MiB. Prompts are capped
-  at 512 KiB, review context at 32 MiB and 500 files, and each diff at 2,000 edits
-  or 250 ms. Reviews that exceed these limits fail instead of silently publishing
-  findings based on partial content.
-- Credentials remain in SecretStorage; raw SDK/provider errors and request
-  objects are excluded from logs. Findings and human drafts are still persisted
-  in VS Code workspace storage and may contain sensitive review text.
-- The extension requires Workspace Trust. See [SECURITY_REVIEW.md](SECURITY_REVIEW.md)
-  for the review scope, fixes and validation limits.
-
-## Development
-
-```bash
-npm install
-npm run watch     # esbuild in watch mode
-```
-
-Press `F5` to launch the Extension Development Host.
-
-Project conventions:
-
-- TypeScript `strict: true`; avoid `any`.
-- Azure DevOps API objects never leave `src/azure/` un-mapped — always go
-  through `AzureDevOpsMapper`.
-- AI providers only see normalized `ReviewContext`; they must not know
-  Azure DevOps exists.
-
-## Testing
-
-```bash
-npm test          # unit tests (vitest), all mocked - no network calls
-npm run lint
-npm run typecheck
-```
-
-Unit tests cover: Azure DevOps model mapping, diff line mapping (added,
-deleted, modified, renamed, multi-line hunks), AI response parsing
-(valid/invalid JSON, missing fields, invalid severity/line numbers,
-confidence filtering), review batching/deduplication, approve/reject/edit
-transitions, duplicate-comment detection, and secret detection.
-
-### Integration tests
-
-This MVP does not ship live integration tests against a real Azure DevOps
-organization (no credentials are available in this environment). To add
-them:
-
-1. Provide `AZURE_DEVOPS_ORG`, `AZURE_DEVOPS_PROJECT`,
-   `AZURE_DEVOPS_REPOSITORY`, `AZURE_DEVOPS_PAT` as environment variables in
-   your own shell (never commit them).
-2. Add a test file under `src/test/azure/` that only runs when
-   `process.env.AZURE_DEVOPS_PAT` is set (e.g. `it.skipIf(!process.env.AZURE_DEVOPS_PAT)`),
-   constructing a real `AzureDevOpsClient` against your PAT/org/project/repo
-   and asserting against a known PR in that repository.
-3. Keep these tests out of the default `npm test` run's required-to-pass set
-   in CI unless the environment variables are present.
-
-## Packaging
-
-```bash
-npm run package
-```
-
-This type-checks, bundles the extension with esbuild (`dist/extension.js`,
-`vscode` kept external), and runs `vsce package` to produce
-`azure-pr-review-<version>.vsix`. Install it via **Extensions view → "..." →
-Install from VSIX...**.
+- Network file downloads and AI responses are capped at 2 MiB. Prompts are
+  capped at 512 KiB, review context at 32 MiB and 500 files, and each diff at
+  2,000 edits or 250 ms. Reviews that exceed these limits fail instead of
+  silently publishing findings based on partial content.
+- Credentials remain in secure storage; raw SDK/provider errors are excluded
+  from logs. Findings and human drafts are still persisted in VS Code
+  workspace storage and may contain sensitive review text.
+- The extension requires Workspace Trust.
 
 ## Troubleshooting
 
@@ -355,3 +201,8 @@ Install from VSIX...**.
 | My draft comments aren't on the PR yet | Drafts are local until you run **Publish All Draft Comments** (Comments view `...` menu) - this is intentional, so you can write a whole review before anything is sent. |
 
 Check **View → Output → Azure PR Review** for detailed (non-sensitive) logs.
+
+---
+
+Source code, issue tracker and full developer documentation:
+[github.com/Munikumar09/ai-pr-review](https://github.com/Munikumar09/ai-pr-review)
