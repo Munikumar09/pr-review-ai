@@ -10,6 +10,7 @@
 !LICENSE
 !dist/extension.js
 !media/icon.svg
+!media/marketplace-icon.png
 !prompts/code-review.md
 !prompts/security-review.md
 !prompts/performance-review.md
