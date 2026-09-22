@@ -358,17 +358,20 @@
         "azurePrReview.organization": {
           "type": "string",
           "default": "",
-          "description": "Azure DevOps organization name."
+          "description": "Azure DevOps organization name.",
+          "scope": "application"
         },
         "azurePrReview.project": {
           "type": "string",
           "default": "",
-          "description": "Azure DevOps project name."
+          "description": "Azure DevOps project name.",
+          "scope": "application"
         },
         "azurePrReview.repository": {
           "type": "string",
           "default": "",
-          "description": "Azure DevOps repository name."
+          "description": "Azure DevOps repository name.",
+          "scope": "application"
         },
         "azurePrReview.ai.provider": {
           "type": "string",
@@ -378,17 +381,22 @@
             "copilot"
           ],
           "default": "mock",
-          "description": "AI review provider to use."
+          "description": "AI review provider to use.",
+          "scope": "application"
         },
         "azurePrReview.ai.maxFindings": {
           "type": "number",
           "default": 20,
-          "description": "Maximum number of AI findings to keep per review."
+          "description": "Maximum number of AI findings to keep per review.",
+          "minimum": 1,
+          "maximum": 100
         },
         "azurePrReview.ai.minConfidence": {
           "type": "number",
           "default": 0.75,
-          "description": "Minimum confidence (0-1) required for an AI finding to be kept."
+          "description": "Minimum confidence (0-1) required for an AI finding to be kept.",
+          "minimum": 0,
+          "maximum": 1
         },
         "azurePrReview.ai.reviewCategories": {
           "type": "array",
@@ -408,7 +416,8 @@
           "type": "string",
           "default": "",
           "editPresentation": "multilineText",
-          "description": "Extra instructions appended to the default AI review prompt (e.g. house coding standards, or things to always flag or ignore). This adds to the built-in prompt - it never replaces the data-handling, review, or output-format rules that keep AI findings safe to review."
+          "description": "Extra instructions appended to the default AI review prompt (e.g. house coding standards, or things to always flag or ignore). This adds to the built-in prompt - it never replaces the data-handling, review, or output-format rules that keep AI findings safe to review.",
+          "scope": "application"
         },
         "azurePrReview.ai.includeAttributionInComments": {
           "type": "boolean",
@@ -418,17 +427,20 @@
         "azurePrReview.opencode.command": {
           "type": "string",
           "default": "opencode",
-          "description": "Command used to invoke the OpenCode CLI."
+          "description": "Command used to invoke the OpenCode CLI.",
+          "scope": "machine"
         },
         "azurePrReview.opencode.model": {
           "type": "string",
           "default": "",
-          "description": "Model passed to OpenCode as \"provider/model\" (e.g. \"anthropic/claude-sonnet-4-5\"). Leave empty to use OpenCode's own default. Run \"Azure PR Review: Select AI Model\" to pick from models OpenCode currently has access to."
+          "description": "Model passed to OpenCode as \"provider/model\" (e.g. \"anthropic/claude-sonnet-4-5\"). Leave empty to use OpenCode's own default. Run \"Azure PR Review: Select AI Model\" to pick from models OpenCode currently has access to.",
+          "scope": "application"
         },
         "azurePrReview.copilot.model": {
           "type": "string",
           "default": "",
-          "description": "Preferred Copilot chat model id or family (e.g. \"gpt-4o\", \"claude-3.5-sonnet\"). Leave empty to use the first model VS Code makes available. Run \"Azure PR Review: Select AI Model\" to pick from currently available models."
+          "description": "Preferred Copilot chat model id or family (e.g. \"gpt-4o\", \"claude-3.5-sonnet\"). Leave empty to use the first model VS Code makes available. Run \"Azure PR Review: Select AI Model\" to pick from currently available models.",
+          "scope": "application"
         },
         "azurePrReview.logging.level": {
           "type": "string",
@@ -444,7 +456,8 @@
         "azurePrReview.security.secretDetection": {
           "type": "boolean",
           "default": true,
-          "description": "Warn before sending content that looks like it contains secrets to an AI provider."
+          "description": "Warn before sending content that looks like it contains secrets to an AI provider.",
+          "scope": "application"
         }
       }
     }
@@ -478,5 +491,11 @@
   "dependencies": {
     "azure-devops-node-api": "^12.5.0",
     "diff": "^5.2.0"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Azure PR Review requires a trusted workspace before accessing credentials or running AI providers."
+    }
   }
 }

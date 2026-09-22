@@ -74,7 +74,9 @@ describe('publishAllDraftComments', () => {
     await draftManager.add(1, { content: 'second', filePath: 'b.ts', rightFileStartLine: 2 });
     const addComment = vi.fn().mockResolvedValue({ id: 1, threadId: 1 } as PullRequestComment);
     const commentService: CommentServiceFake = { addComment };
-    vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue('Publish 2 Comment(s)');
+    vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue(
+      'Publish 2 Comment(s)' as never,
+    );
 
     await publishAllDraftComments(pullRequest(), draftManager, commentService);
 
@@ -93,7 +95,9 @@ describe('publishAllDraftComments', () => {
       return { id: 1, threadId: 1 } as PullRequestComment;
     });
     const commentService: CommentServiceFake = { addComment };
-    vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue('Publish 2 Comment(s)');
+    vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue(
+      'Publish 2 Comment(s)' as never,
+    );
 
     await publishAllDraftComments(pullRequest(), draftManager, commentService);
 
@@ -122,7 +126,7 @@ describe('discardAllDraftComments', () => {
     const draftManager = new DraftCommentManager(makeStore());
     await draftManager.add(1, { content: 'a', filePath: 'a.ts' });
     await draftManager.add(1, { content: 'b', filePath: 'b.ts' });
-    vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue('Discard All');
+    vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue('Discard All' as never);
 
     await discardAllDraftComments(pullRequest(), draftManager);
 
@@ -144,7 +148,7 @@ describe('removeDraftComment / editDraftComment', () => {
   it('editDraftComment updates the content when the user provides new text', async () => {
     const draftManager = new DraftCommentManager(makeStore());
     const a = await draftManager.add(1, { content: 'old text', filePath: 'a.ts' });
-    vi.spyOn(vscode.window, 'showInputBox').mockResolvedValue('new text');
+    vi.spyOn(vscode.window, 'showInputBox').mockResolvedValue('new text' as never);
 
     await editDraftComment(pullRequest(), a, draftManager);
 

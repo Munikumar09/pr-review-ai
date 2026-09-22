@@ -1,3 +1,4 @@
+import { openAzureUrl } from '../utils/azureUrl';
 import * as vscode from 'vscode';
 import { PullRequest } from '../models/PullRequest';
 import { ChangedFilesTreeProvider } from '../views/ChangedFilesTreeProvider';
@@ -37,5 +38,5 @@ export async function openPullRequestInBrowser(pullRequest: PullRequest): Promis
     vscode.window.showWarningMessage('This pull request has no browser URL available.');
     return;
   }
-  await vscode.env.openExternal(vscode.Uri.parse(pullRequest.webUrl));
+  await openAzureUrl(pullRequest.webUrl);
 }

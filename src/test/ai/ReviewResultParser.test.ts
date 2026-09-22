@@ -146,3 +146,12 @@ describe('ReviewResultParser', () => {
     expect(result.rejectedCount).toBe(0);
   });
 });
+
+it('drops null, primitive and array findings without crashing', () => {
+  const result = new ReviewResultParser().parse(
+    '{"findings":[null,1,"text",[],true]}',
+    baseOptions,
+  );
+  expect(result.findings).toEqual([]);
+  expect(result.rejectedCount).toBe(5);
+});

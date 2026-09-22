@@ -48,7 +48,7 @@ export async function publishAllDraftComments(
       published.push(draft);
     } catch (err) {
       logger.error(`Failed to publish draft comment on ${draft.filePath}.`, err);
-      failed.push({ draft, error: err instanceof Error ? err.message : String(err) });
+      failed.push({ draft, error: toUserMessage(err) });
     }
   }
 

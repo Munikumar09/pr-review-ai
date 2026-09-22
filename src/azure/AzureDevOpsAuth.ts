@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { SECRET_KEYS } from '../config/ConfigurationKeys';
 import { Logger } from '../utils/logger';
+import { registerSecret } from '../utils/secretDetection';
 
 /**
  * Authentication is behind an interface so a future OAuth/Microsoft Entra ID
@@ -26,7 +27,12 @@ export class PatAuthProvider implements AzureDevOpsAuthProvider {
   constructor(private readonly secrets: vscode.SecretStorage) {}
 
   async getToken(): Promise<string | undefined> {
-    return this.secrets.get(SECRET_KEYS.pat);
+    const token = await this.secrets.get(SECRET_KEYS.pat);
+    if (token) {
+      registerSecret(token);
+      registerSecret(Buffer.from(`:${token}`).toString('base64'));
+    }
+    return token;
   }
 
   async authenticate(): Promise<void> {
@@ -43,6 +49,7 @@ export class PatAuthProvider implements AzureDevOpsAuthProvider {
       return;
     }
 
+    registerSecret(pat.trim());
     await this.secrets.store(SECRET_KEYS.pat, pat.trim());
     this.logger.info('Personal Access Token stored securely.');
     this.emitter.fire();

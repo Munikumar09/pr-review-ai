@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { createHash } from 'crypto';
 import { ReviewSession } from '../models/ReviewSession';
 import { DraftComment } from '../models/DraftComment';
 
@@ -22,7 +23,19 @@ interface CacheEntry<T> {
 export class StateStore {
   private readonly cache = new Map<string, CacheEntry<unknown>>();
 
-  constructor(private readonly context: vscode.ExtensionContext) {}
+  private readonly scope: string;
+
+  constructor(
+    private readonly context: vscode.ExtensionContext,
+    connectionScope = 'unconfigured',
+  ) {
+    this.scope = createHash('sha256').update(connectionScope).digest('hex');
+  }
+
+  private key(base: string): string {
+    // Legacy unscoped entries cannot safely be attributed to a repository.
+    return `${base}:${this.scope}`;
+  }
 
   getCached<T>(key: string): T | undefined {
     const entry = this.cache.get(key);
@@ -53,7 +66,7 @@ export class StateStore {
   }
 
   getReviewSessions(): ReviewSession[] {
-    return this.context.workspaceState.get<ReviewSession[]>(REVIEW_SESSIONS_KEY, []);
+    return this.context.workspaceState.get<ReviewSession[]>(this.key(REVIEW_SESSIONS_KEY), []);
   }
 
   getReviewSession(pullRequestId: number): ReviewSession | undefined {
@@ -61,14 +74,16 @@ export class StateStore {
   }
 
   async saveReviewSession(session: ReviewSession): Promise<void> {
-    const sessions = this.getReviewSessions().filter((s) => s.id !== session.id);
+    const sessions = this.getReviewSessions().filter(
+      (s) => s.pullRequestId !== session.pullRequestId,
+    );
     sessions.push(session);
-    await this.context.workspaceState.update(REVIEW_SESSIONS_KEY, sessions);
+    await this.context.workspaceState.update(this.key(REVIEW_SESSIONS_KEY), sessions);
   }
 
   async clearReviewSession(pullRequestId: number): Promise<void> {
     const sessions = this.getReviewSessions().filter((s) => s.pullRequestId !== pullRequestId);
-    await this.context.workspaceState.update(REVIEW_SESSIONS_KEY, sessions);
+    await this.context.workspaceState.update(this.key(REVIEW_SESSIONS_KEY), sessions);
   }
 
   /** Draft (unpublished) human review comments, persisted so they survive a window reload. */
@@ -78,15 +93,15 @@ export class StateStore {
 
   async saveDraftComments(pullRequestId: number, drafts: DraftComment[]): Promise<void> {
     const others = this.getAllDraftComments().filter((d) => d.pullRequestId !== pullRequestId);
-    await this.context.workspaceState.update(DRAFT_COMMENTS_KEY, [...others, ...drafts]);
+    await this.context.workspaceState.update(this.key(DRAFT_COMMENTS_KEY), [...others, ...drafts]);
   }
 
   async clearDraftComments(pullRequestId: number): Promise<void> {
     const others = this.getAllDraftComments().filter((d) => d.pullRequestId !== pullRequestId);
-    await this.context.workspaceState.update(DRAFT_COMMENTS_KEY, others);
+    await this.context.workspaceState.update(this.key(DRAFT_COMMENTS_KEY), others);
   }
 
   private getAllDraftComments(): DraftComment[] {
-    return this.context.workspaceState.get<DraftComment[]>(DRAFT_COMMENTS_KEY, []);
+    return this.context.workspaceState.get<DraftComment[]>(this.key(DRAFT_COMMENTS_KEY), []);
   }
 }

@@ -1,3 +1,4 @@
+import { toUserMessage } from '../utils/errors';
 import * as crypto from 'crypto';
 import * as vscode from 'vscode';
 import { PullRequest } from '../models/PullRequest';
@@ -135,6 +136,7 @@ export class AIReviewOrchestrator {
 
         const batchContext: ReviewContext = { ...context, files: batch.files };
         const result = await provider.review(batchContext, options, cancellationToken);
+        throwIfCancelled(cancellationToken);
         allFindings.push(...result.findings);
         rejectedCount += result.rejectedCount;
         session.filesReviewed += batch.files.length;
@@ -149,6 +151,7 @@ export class AIReviewOrchestrator {
       progress?.('Mapping findings to changed lines...');
       const mapped = await this.mapFindings(pullRequest, files, capped);
 
+      throwIfCancelled(cancellationToken);
       session.findings = mapped;
       session.filesSkipped = files.length - session.filesReviewed;
       session.status = 'completed';
@@ -166,7 +169,7 @@ export class AIReviewOrchestrator {
         return session;
       }
       session.status = 'failed';
-      session.error = err instanceof Error ? err.message : String(err);
+      session.error = toUserMessage(err);
       session.completedAt = new Date().toISOString();
       throw err;
     }
@@ -194,9 +197,7 @@ export class AIReviewOrchestrator {
       }
       const position = mapFindingToDiffPosition(finding, diff);
       if (isMappingFailure(position)) {
-        this.logger.warn(
-          `Unable to map finding "${finding.title}" (${finding.filePath}:${finding.startLine}) to a changed line: ${position.reason}`,
-        );
+        this.logger.warn(`Unable to map a finding to a changed line: ${position.reason}`);
         results.push({ ...finding, mappingError: position.reason });
       } else {
         results.push({

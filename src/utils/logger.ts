@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { LogLevel } from '../config/Configuration';
+import { redactSecrets } from './secretDetection';
 
 const LEVEL_ORDER: Record<LogLevel, number> = {
   debug: 0,
@@ -47,8 +48,7 @@ export class Logger {
   }
 
   error(message: string, error?: unknown): void {
-    const details = error instanceof Error ? `${error.message}\n${error.stack ?? ''}` : error;
-    this.write('error', message, details === undefined ? [] : [details]);
+    this.write('error', message, error === undefined ? [] : [error]);
   }
 
   show(): void {
@@ -62,17 +62,16 @@ export class Logger {
     const timestamp = new Date().toISOString();
     const prefix = `[${timestamp}] [${level.toUpperCase()}]`;
     const suffix = meta.length > 0 ? ' ' + meta.map((m) => safeStringify(m)).join(' ') : '';
-    this.channel.appendLine(`${prefix} ${message}${suffix}`);
+    // Replace control characters to prevent forged log lines and terminal escapes.
+    // eslint-disable-next-line no-control-regex
+    const safeMessage = redactSecrets(message).replace(/[\x00-\x1f\x7f]/g, ' ');
+    this.channel.appendLine(`${prefix} ${safeMessage}${suffix}`);
   }
 }
 
 function safeStringify(value: unknown): string {
-  if (typeof value === 'string') {
-    return value;
-  }
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
+  // SDK errors, JSON parser exceptions and CLI stderr may echo credentials or source.
+  // Never serialize arbitrary error messages, stacks, responses or nested request objects.
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return value instanceof Error ? '[error details omitted]' : '[details omitted]';
 }

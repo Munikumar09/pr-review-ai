@@ -126,7 +126,9 @@ export function registerCommands(
     client.reset();
     prService.invalidateAll();
     prTree.refresh();
-    vscode.window.showInformationMessage('Azure DevOps connection configured.');
+    vscode.window.showInformationMessage(
+      'Azure DevOps settings saved. Reload the window to apply the connection.',
+    );
   });
 
   register('azurePrReview.signIn', async () => {

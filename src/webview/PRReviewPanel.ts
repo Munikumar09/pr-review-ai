@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { randomBytes } from 'crypto';
 import { PullRequest } from '../models/PullRequest';
 import { PullRequestFile } from '../models/PullRequestFile';
 import { ReviewSession } from '../models/ReviewSession';
@@ -45,12 +46,12 @@ export class PRReviewPanel {
       PRReviewPanel.viewType,
       `PR #${pullRequest.id}: ${pullRequest.title}`,
       { viewColumn: vscode.ViewColumn.One, preserveFocus: false },
-      { enableScripts: true, retainContextWhenHidden: true },
+      { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [] },
     );
     this.disposables.push(
-      this.panel.webview.onDidReceiveMessage((message: PanelMessage) =>
-        this.messageEmitter.fire(message),
-      ),
+      this.panel.webview.onDidReceiveMessage((message: unknown) => {
+        if (isPanelMessage(message)) this.messageEmitter.fire(message);
+      }),
       this.panel.onDidDispose(() => this.disposeEmitter.fire()),
     );
   }
@@ -74,6 +75,7 @@ export class PRReviewPanel {
 
 function render(model: PanelViewModel): string {
   const { pullRequest: pr, files, session, summary } = model;
+  const nonce = randomBytes(24).toString('base64');
   const totals = files.reduce(
     (acc, f) => ({
       additions: acc.additions + f.additions,
@@ -86,8 +88,8 @@ function render(model: PanelViewModel): string {
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
-<style>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'; base-uri 'none'; form-action 'none';">
+<style nonce="${nonce}">
   body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); padding: 0 16px 24px; }
   h1 { font-size: 1.3em; }
   .meta-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px 24px; margin: 12px 0 20px; }
@@ -116,21 +118,25 @@ function render(model: PanelViewModel): string {
     <div><span class="label">Files</span>${files.length}</div>
     <div><span class="label">Additions</span>+${totals.additions}</div>
     <div><span class="label">Deletions</span>-${totals.deletions}</div>
-    <div><span class="label">Status</span>${pr.status}</div>
+    <div><span class="label">Status</span>${escapeHtml(pr.status)}</div>
   </div>
   <div class="actions">
-    <button onclick="send('reviewPullRequest')">Run AI Review</button>
-    <button class="secondary" onclick="send('refresh')">Refresh</button>
-    <button class="secondary" onclick="send('openInBrowser')">Open in Azure DevOps</button>
-    ${session?.status === 'running' ? '<button class="secondary" onclick="send(\'cancelReview\')">Cancel Review</button>' : ''}
-    ${hasApprovableFindings(session) ? '<button onclick="send(\'approveAll\')">Approve All</button>' : ''}
-    ${session && session.status !== 'running' ? '<button class="secondary" onclick="send(\'clearReview\')">Clear All</button>' : ''}
+    <button data-action="reviewPullRequest">Run AI Review</button>
+    <button class="secondary" data-action="refresh">Refresh</button>
+    <button class="secondary" data-action="openInBrowser">Open in Azure DevOps</button>
+    ${session?.status === 'running' ? '<button class="secondary" data-action="cancelReview">Cancel Review</button>' : ''}
+    ${hasApprovableFindings(session) ? '<button data-action="approveAll">Approve All</button>' : ''}
+    ${session && session.status !== 'running' ? '<button class="secondary" data-action="clearReview">Clear All</button>' : ''}
   </div>
   ${renderFindings(session)}
   ${renderPublishBar(summary)}
-  <script>
+  <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
-    function send(type, extra) { vscode.postMessage(Object.assign({ type }, extra || {})); }
+    document.addEventListener('click', (event) => {
+      const button = event.target.closest('button[data-action]');
+      if (!button || button.disabled) return;
+      vscode.postMessage({ type: button.dataset.action, findingId: button.dataset.findingId });
+    });
   </script>
 </body>
 </html>`;
@@ -163,16 +169,16 @@ function renderFindings(session?: ReviewSession): string {
   const cards = session.findings
     .map(
       (f) => `<div class="card">
-        <div class="title sev-${f.severity}">${severityBadge(f.severity)} ${escapeHtml(f.title)} <span class="badge">${f.status}</span></div>
+        <div class="title sev-${escapeHtml(f.severity)}">${severityBadge(f.severity)} ${escapeHtml(f.title)} <span class="badge">${escapeHtml(f.status)}</span></div>
         <div>${escapeHtml(f.filePath)}:${f.startLine}-${f.endLine}</div>
         <p>${escapeHtml(f.description)}</p>
         ${f.suggestedFix ? `<p><em>Suggested fix:</em> ${escapeHtml(f.suggestedFix)}</p>` : ''}
         <p>Confidence: ${Math.round(f.confidence * 100)}%${f.mappingError ? ` · ⚠ ${escapeHtml(f.mappingError)}` : ''}</p>
-        <button onclick="send('openFinding', { findingId: '${f.id}' })">Open</button>
-        <button ${f.status === 'published' ? 'disabled' : ''} onclick="send('approve', { findingId: '${f.id}' })" title="Approve and publish this as a comment on the pull request now">Approve</button>
-        <button class="secondary" onclick="send('editFinding', { findingId: '${f.id}' })">Edit</button>
-        <button class="secondary" onclick="send('fix', { findingId: '${f.id}' })" title="Jump to the flagged code and show the suggested fix - never edits your files automatically">Fix</button>
-        <button class="secondary" onclick="send('remove', { findingId: '${f.id}' })" title="Remove this finding from the list - does not affect Azure DevOps">Remove</button>
+        <button data-action="openFinding" data-finding-id="${escapeHtml(f.id)}">Open</button>
+        <button ${f.status === 'published' ? 'disabled' : ''} data-action="approve" data-finding-id="${escapeHtml(f.id)}" title="Approve and publish this as a comment on the pull request now">Approve</button>
+        <button class="secondary" data-action="editFinding" data-finding-id="${escapeHtml(f.id)}">Edit</button>
+        <button class="secondary" data-action="fix" data-finding-id="${escapeHtml(f.id)}" title="Jump to the flagged code and show the suggested fix - never edits your files automatically">Fix</button>
+        <button class="secondary" data-action="remove" data-finding-id="${escapeHtml(f.id)}" title="Remove this finding from the list - does not affect Azure DevOps">Remove</button>
       </div>`,
     )
     .join('\n');
@@ -186,7 +192,7 @@ function renderPublishBar(summary?: PublishSummary): string {
   }
   return `<div class="publish-bar">
     <p>Approved: ${summary.approved} &nbsp; Rejected: ${summary.rejected} &nbsp; Pending: ${summary.pending} &nbsp; Ready to publish: ${summary.readyToPublish}</p>
-    <button ${summary.readyToPublish === 0 ? 'disabled' : ''} onclick="send('publishApproved')">Publish ${summary.readyToPublish} Comments</button>
+    <button ${summary.readyToPublish === 0 ? 'disabled' : ''} data-action="publishApproved">Publish ${summary.readyToPublish} Comments</button>
   </div>`;
 }
 
@@ -212,7 +218,7 @@ function severityBadge(severity: FindingSeverity): string {
     low: '🔵',
     info: '⚪',
   };
-  return `${icons[severity]} ${severity.toUpperCase()}`;
+  return `${icons[severity] ?? '⚪'} ${escapeHtml(severity.toUpperCase())}`;
 }
 
 function escapeHtml(text: string): string {
@@ -222,4 +228,23 @@ function escapeHtml(text: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+/** The webview is a trust boundary; TypeScript annotations do not validate posted messages. */
+export function isPanelMessage(message: unknown): message is PanelMessage {
+  if (!message || typeof message !== 'object' || Array.isArray(message)) return false;
+  const { type, findingId } = message as { type?: unknown; findingId?: unknown };
+  if (typeof type !== 'string') return false;
+  if (['approve', 'remove', 'editFinding', 'fix', 'openFinding'].includes(type)) {
+    return typeof findingId === 'string' && findingId.length > 0 && findingId.length <= 128;
+  }
+  return [
+    'reviewPullRequest',
+    'refresh',
+    'openInBrowser',
+    'cancelReview',
+    'clearReview',
+    'approveAll',
+    'publishApproved',
+  ].includes(type);
 }

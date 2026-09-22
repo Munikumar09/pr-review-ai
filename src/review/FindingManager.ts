@@ -33,7 +33,7 @@ export class FindingManager {
   async approve(pullRequestId: number, findingId: string): Promise<ReviewFinding> {
     return this.updateFinding(pullRequestId, findingId, (finding) => ({
       ...finding,
-      status: 'approved',
+      status: finding.status === 'published' ? 'published' : 'approved',
     }));
   }
 
@@ -49,6 +49,17 @@ export class FindingManager {
       ...finding,
       ...edit,
       status: 'edited',
+      ...((edit.startLine !== undefined && edit.startLine !== finding.startLine) ||
+      (edit.endLine !== undefined && edit.endLine !== finding.endLine)
+        ? {
+            rightFileStartLine: undefined,
+            rightFileEndLine: undefined,
+            leftFileStartLine: undefined,
+            leftFileEndLine: undefined,
+            mappingError:
+              'The line range changed. Run a new review before publishing this finding.',
+          }
+        : {}),
     }));
   }
 

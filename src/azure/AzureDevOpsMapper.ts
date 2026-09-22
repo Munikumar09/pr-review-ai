@@ -15,8 +15,8 @@ export class AzureDevOpsMapper {
     const projectName = pr.repository?.project?.name ?? '';
     const webUrl =
       organization && projectName && repoName && pr.pullRequestId
-        ? `https://dev.azure.com/${organization}/${encodeURIComponent(projectName)}/_git/${encodeURIComponent(repoName)}/pullrequest/${pr.pullRequestId}`
-        : (pr.url ?? '');
+        ? `https://dev.azure.com/${encodeURIComponent(organization)}/${encodeURIComponent(projectName)}/_git/${encodeURIComponent(repoName)}/pullrequest/${pr.pullRequestId}`
+        : '';
 
     return {
       id: pr.pullRequestId ?? 0,

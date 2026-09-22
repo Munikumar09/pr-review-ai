@@ -1,3 +1,5 @@
+import { organizationUrl } from '../utils/azureUrl';
+import { MAX_FILE_BYTES } from '../utils/securityLimits';
 import * as azdev from 'azure-devops-node-api';
 import { IGitApi } from 'azure-devops-node-api/GitApi';
 import * as GitInterfaces from 'azure-devops-node-api/interfaces/GitInterfaces';
@@ -60,13 +62,16 @@ export class AzureDevOpsClient {
     if (!this.options.organization) {
       throw new ConfigurationError('Azure DevOps organization is not configured.');
     }
+    const orgUrl = organizationUrl(this.options.organization);
     const token = await this.auth.getToken();
     if (!token) {
       throw new AuthenticationError();
     }
-    const orgUrl = `https://dev.azure.com/${this.options.organization}`;
     const authHandler = azdev.getPersonalAccessTokenHandler(token);
-    this.connection = new azdev.WebApi(orgUrl, authHandler);
+    this.connection = new azdev.WebApi(orgUrl, authHandler, {
+      allowRedirects: false,
+      socketTimeout: 30_000,
+    });
     return this.connection;
   }
 
@@ -135,7 +140,7 @@ export class AzureDevOpsClient {
           }
         }
       } catch (err) {
-        this.logger.warn('Unable to resolve authenticated user for PR filtering.', String(err));
+        this.logger.warn('Unable to resolve authenticated user for PR filtering.', err);
       }
     }
 
@@ -344,11 +349,40 @@ export class AzureDevOpsClient {
   }
 }
 
-async function streamToString(stream: NodeJS.ReadableStream): Promise<string> {
+export async function streamToString(stream: NodeJS.ReadableStream): Promise<string> {
   const chunks: Buffer[] = [];
   return new Promise((resolve, reject) => {
-    stream.on('data', (chunk: Buffer) => chunks.push(chunk));
-    stream.on('error', reject);
-    stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    let size = 0;
+    let settled = false;
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      chunks.length = 0;
+      // Destroy the network stream instead of continuing to buffer hostile content.
+      (stream as NodeJS.ReadableStream & { destroy?: () => void }).destroy?.();
+      reject(error);
+    };
+    const timer = setTimeout(() => fail(new Error('File download timed out.')), 30_000);
+    stream.on('data', (chunk: Buffer | string) => {
+      if (settled) return;
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buffer.length;
+      if (size > MAX_FILE_BYTES) {
+        fail(new Error('File exceeds the 2 MiB review limit.'));
+        return;
+      }
+      chunks.push(buffer);
+    });
+    stream.on('error', () => fail(new Error('File download failed.')));
+    stream.on('end', () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(Buffer.concat(chunks).toString('utf8'));
+    });
+    stream.on('close', () => {
+      if (!settled) fail(new Error('File download ended before completion.'));
+    });
   });
 }

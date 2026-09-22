@@ -76,7 +76,7 @@ side.
 ## Requirements
 
 - VS Code 1.85+
-- Node.js 18+ (for building from source)
+- Node.js 24 LTS (for building and running the development tools)
 - An Azure DevOps organization, project, and Git repository you have access to
 - A Personal Access Token with **Code (Read & Write)** and **Pull Request**
   scopes
@@ -141,15 +141,28 @@ structured JSON from stdout. It enforces a timeout, supports cancellation,
 never logs prompt/response content (which may contain proprietary source),
 and surfaces non-zero exit codes as user-facing errors.
 
-**Note on the CLI contract:** this implementation assumes OpenCode exposes
-`opencode run --json` accepting a prompt on stdin and returning JSON on
-stdout, matching the "machine-readable/API mode" the requirements call for.
-If your installed OpenCode version uses a different invocation, adjust the
-`args` passed to `run()` in `OpenCodeProvider.ts` accordingly — the rest of
-the pipeline (context building, parsing, validation, line mapping) is
-unaffected by that detail.
+The CLI must support `run --format json --pure --agent`, inline configuration,
+and deny-all permissions. Each invocation uses an empty temporary directory;
+reviews select a dedicated agent with every tool denied. External plugins,
+project configuration, and automatic session sharing are disabled. The extension
+never retries with weaker permissions if that invocation fails.
+
+This uses OpenCode's permission enforcement, not an operating-system sandbox.
+Use a trusted, current CLI installation. The CLI's user/administrator settings,
+authentication, local session retention and model provider's data policies remain
+part of your trusted environment. The CLI is not bundled with the extension.
 
 ## Configuration
+
+Connection, provider, model, custom instructions and secret-detection choices are
+read from **user settings**. The OpenCode executable is a machine setting and may
+be an absolute path or a command on `PATH`; workspace-relative executables are
+rejected. Repository `.vscode/settings.json` cannot override these choices.
+
+Changing the organization, project or repository requires **Reload Window**.
+Reviews and drafts are stored separately for each connection. Legacy review/draft
+state without a repository identity is retained in VS Code storage but is no
+longer restored automatically; re-create those reviews before publishing.
 
 | Setting | Default | Description |
 |---|---|---|
@@ -211,8 +224,22 @@ unaffected by that detail.
   API keys, private keys, bearer tokens, AWS keys, connection strings, and
   similar patterns before content leaves VS Code for an AI provider. This is
   a warning, not a guarantee.
-- Nothing is ever published to Azure DevOps without an explicit human
-  Approve + Publish action.
+- Only explicitly approved AI findings can be published. Editing a finding
+  requires a fresh approval, and editing its line range invalidates the mapping.
+- Secret scanning checks the actual outbound prompt, including deleted diff
+  lines, PR metadata, existing comments and custom instructions. A warning is
+  accepted only through the explicit **Send to AI Provider** action.
+- Webviews use nonce-based scripts, escaped content, validated messages and no
+  local resource access. Untrusted tooltips and AI comment text render literally.
+- Network file downloads and AI responses are capped at 2 MiB. Prompts are capped
+  at 512 KiB, review context at 32 MiB and 500 files, and each diff at 2,000 edits
+  or 250 ms. Reviews that exceed these limits fail instead of silently publishing
+  findings based on partial content.
+- Credentials remain in SecretStorage; raw SDK/provider errors and request
+  objects are excluded from logs. Findings and human drafts are still persisted
+  in VS Code workspace storage and may contain sensitive review text.
+- The extension requires Workspace Trust. See [SECURITY_REVIEW.md](SECURITY_REVIEW.md)
+  for the review scope, fixes and validation limits.
 
 ## Development
 

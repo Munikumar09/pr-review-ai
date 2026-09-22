@@ -121,3 +121,11 @@ export class CancellationTokenSource {
   }
   dispose(): void {}
 }
+
+export const workspace = {
+  isTrusted: true,
+  getConfiguration: (_section?: string) => ({
+    get: <T>(_key: string, fallback?: T): T | undefined => fallback,
+    inspect: <T>(_key: string): { globalValue?: T; defaultValue?: T } | undefined => undefined,
+  }),
+};

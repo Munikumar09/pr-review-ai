@@ -1,4 +1,4 @@
-import { structuredPatch, type Hunk } from 'diff';
+import { structuredPatch, type Hunk, type PatchOptions } from 'diff';
 import { FileDiff } from '../models/FileDiff';
 import { ReviewFinding } from '../models/ReviewFinding';
 
@@ -87,8 +87,12 @@ export function mapFindingToDiffPosition(
     diff.newContent,
     '',
     '',
-    { context: CONTEXT_LINES },
+    { context: CONTEXT_LINES, maxEditLength: 2_000, timeout: 250 } as PatchOptions & {
+      timeout: number;
+    },
   );
+
+  if (!patch) return { reason: 'The diff exceeds the review complexity limit.' };
 
   const hunk = patch.hunks.find((h) =>
     rangesOverlap(finding.startLine, finding.endLine, newRange(h)),

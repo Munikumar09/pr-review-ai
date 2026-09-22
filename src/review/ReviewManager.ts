@@ -4,10 +4,8 @@ import { PullRequestFile } from '../models/PullRequestFile';
 import { ReviewSession } from '../models/ReviewSession';
 import { AIReviewProvider, ReviewMode, ReviewOptions } from '../ai/AIReviewProvider';
 import { AIReviewOrchestrator } from '../ai/AIReviewOrchestrator';
-import { PullRequestDiffService } from '../azure/PullRequestDiffService';
 import { ReviewState } from './ReviewState';
 import { Configuration } from '../config/Configuration';
-import { detectSecrets } from '../utils/secretDetection';
 import { Logger } from '../utils/logger';
 
 export const LARGE_PR_FILE_THRESHOLD = 100;
@@ -21,7 +19,7 @@ export interface StartReviewParams {
 
 /**
  * Application-layer entry point AI review commands go through. Owns
- * provider selection, cancellation, and the secret-detection safety prompt;
+ * provider selection and cancellation; providers scan their final outbound prompts;
  * delegates the actual pipeline to AIReviewOrchestrator.
  */
 export class ReviewManager {
@@ -30,7 +28,6 @@ export class ReviewManager {
 
   constructor(
     private readonly orchestrator: AIReviewOrchestrator,
-    private readonly diffService: PullRequestDiffService,
     private readonly state: ReviewState,
     private readonly config: Configuration,
     private readonly providers: Map<string, AIReviewProvider>,
@@ -51,26 +48,6 @@ export class ReviewManager {
     }
     const totalChanges = files.reduce((sum, f) => sum + f.additions + f.deletions, 0);
     return totalChanges > LARGE_PR_LINE_THRESHOLD;
-  }
-
-  /**
-   * Checks the selected files' diffs for likely secrets before they'd be
-   * sent to an AI provider (requirement #41). Returns the list of matches
-   * found so the caller can show a confirmation prompt; an empty array
-   * means it's safe to proceed silently.
-   */
-  async checkForSecrets(pullRequest: PullRequest, files: PullRequestFile[]): Promise<string[]> {
-    if (!this.config.isSecretDetectionEnabled()) {
-      return [];
-    }
-    const kinds = new Set<string>();
-    for (const file of files) {
-      const diff = await this.diffService.getFileDiff(pullRequest.id, file);
-      for (const match of detectSecrets(diff.newContent)) {
-        kinds.add(match.kind);
-      }
-    }
-    return Array.from(kinds);
   }
 
   async startReview(
@@ -103,11 +80,21 @@ export class ReviewManager {
         progress,
         cancellationToken: cts.token,
       });
-      await this.state.set(session);
+      if (this.cancellationSources.get(params.pullRequest.id) === cts) {
+        await this.state.set(session);
+      }
       return session;
     } finally {
-      this.cancellationSources.delete(params.pullRequest.id);
+      if (this.cancellationSources.get(params.pullRequest.id) === cts) {
+        this.cancellationSources.delete(params.pullRequest.id);
+      }
       cts.dispose();
+    }
+  }
+
+  cancelAll(): void {
+    for (const source of this.cancellationSources.values()) {
+      source.cancel();
     }
   }
 

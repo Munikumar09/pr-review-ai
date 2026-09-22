@@ -6,3 +6,8 @@ node_modules/
 *.log
 .DS_Store
 coverage/
+
+.env
+.env.*
+*.pem
+*.key

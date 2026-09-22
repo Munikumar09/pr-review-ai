@@ -1,3 +1,5 @@
+import { escapeMarkdown } from '../utils/markdown';
+import { toUserMessage } from '../utils/errors';
 import { ReviewFinding } from '../models/ReviewFinding';
 import { PullRequestComment } from '../models/PullRequestComment';
 import { PullRequestCommentService } from '../azure/PullRequestCommentService';
@@ -19,7 +21,7 @@ export interface PublishResult {
   failed: Array<{ finding: ReviewFinding; error: string }>;
 }
 
-const PUBLISHABLE_STATUSES = new Set(['approved', 'edited']);
+const PUBLISHABLE_STATUSES = new Set(['approved']);
 const DUPLICATE_WORD_OVERLAP_THRESHOLD = 0.6;
 
 /** Narrow view of PullRequestCommentService this class depends on - keeps unit tests free of real Azure DevOps calls. */
@@ -36,6 +38,7 @@ export type CommentServiceForApproval = Pick<
  */
 export class ApprovalManager {
   private readonly logger = Logger.getInstance();
+  private readonly publishing = new Set<number>();
 
   constructor(
     private readonly state: ReviewState,
@@ -50,14 +53,14 @@ export class ApprovalManager {
     return {
       approved: findings.filter((f) => f.status === 'approved').length,
       rejected: findings.filter((f) => f.status === 'rejected').length,
-      pending: findings.filter((f) => f.status === 'pending').length,
+      pending: findings.filter((f) => f.status === 'pending' || f.status === 'edited').length,
       readyToPublish: findings.filter((f) => PUBLISHABLE_STATUSES.has(f.status) && !f.mappingError)
         .length,
     };
   }
 
   /**
-   * Publishes every publishable (approved/edited) finding, or - when `findingIds` is given -
+   * Publishes every explicitly approved finding, or - when `findingIds` is given -
    * only those specific findings (used by "Approve" to publish a single finding immediately, and
    * by "Approve All" to publish every findable one in a single call sharing the same
    * mapping/duplicate checks).
@@ -65,6 +68,21 @@ export class ApprovalManager {
   async publishApproved(
     pullRequestId: number,
     options: { findingIds?: readonly string[] } = {},
+  ): Promise<PublishResult> {
+    if (this.publishing.has(pullRequestId)) {
+      return { published: [], skippedDuplicates: [], skippedUnmapped: [], failed: [] };
+    }
+    this.publishing.add(pullRequestId);
+    try {
+      return await this.publishOnce(pullRequestId, options);
+    } finally {
+      this.publishing.delete(pullRequestId);
+    }
+  }
+
+  private async publishOnce(
+    pullRequestId: number,
+    options: { findingIds?: readonly string[] },
   ): Promise<PublishResult> {
     const session = this.state.get(pullRequestId);
     const result: PublishResult = {
@@ -86,6 +104,13 @@ export class ApprovalManager {
       if (targetIds && !targetIds.has(finding.id)) {
         continue;
       }
+      // Approval may have been revoked/edited while fetching comments or publishing another finding.
+      const current = this.state.get(pullRequestId);
+      if (
+        current?.id !== session.id ||
+        current.findings.find((f) => f.id === finding.id) !== finding
+      )
+        continue;
       if (!PUBLISHABLE_STATUSES.has(finding.status)) {
         continue;
       }
@@ -96,7 +121,7 @@ export class ApprovalManager {
       }
 
       if (isDuplicateOfExisting(finding, existingComments)) {
-        this.logger.info(`Skipping publish of "${finding.title}": duplicates an existing comment.`);
+        this.logger.info('Skipping a finding that duplicates an existing comment.');
         result.skippedDuplicates.push(finding);
         continue;
       }
@@ -114,14 +139,20 @@ export class ApprovalManager {
 
       try {
         await this.commentService.addComment(pullRequestId, request);
-        findings[i] = { ...finding, status: 'published' };
-        result.published.push(findings[i]);
+        const published: ReviewFinding = { ...finding, status: 'published' };
+        result.published.push(published);
+        const latest = this.state.get(pullRequestId);
+        if (latest?.id === session.id) {
+          await this.state.set({
+            ...latest,
+            findings: latest.findings.map((f) => (f === finding ? published : f)),
+          });
+        }
       } catch (err) {
-        result.failed.push({ finding, error: err instanceof Error ? err.message : String(err) });
+        result.failed.push({ finding, error: toUserMessage(err) });
       }
     }
 
-    await this.state.set({ ...session, findings });
     return result;
   }
 }
@@ -139,18 +170,18 @@ export function formatFindingAsComment(
   const includeAttribution = options.includeAttribution ?? true;
   const parts = [
     includeAttribution
-      ? `**[AI Review - ${finding.severity.toUpperCase()} - ${finding.category}] ${finding.title}**`
-      : `**${finding.title}**`,
+      ? `**[AI Review - ${finding.severity.toUpperCase()} - ${finding.category}] ${escapeMarkdown(finding.title)}**`
+      : `**${escapeMarkdown(finding.title)}**`,
     '',
-    finding.description,
+    escapeMarkdown(finding.description),
   ];
   if (finding.suggestedFix) {
-    parts.push('', `_Suggested fix:_ ${finding.suggestedFix}`);
+    parts.push('', `_Suggested fix:_ ${escapeMarkdown(finding.suggestedFix)}`);
   }
   if (includeAttribution) {
     parts.push(
       '',
-      `_Confidence: ${Math.round(finding.confidence * 100)}% · Provider: ${finding.provider}_`,
+      `_Confidence: ${Math.round(finding.confidence * 100)}% · Provider: ${escapeMarkdown(finding.provider)}_`,
     );
   }
   return parts.join('\n');

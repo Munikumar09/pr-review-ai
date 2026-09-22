@@ -157,7 +157,7 @@ describe('approveAllAndPublish', () => {
       addComment,
     };
     const approvalManager = new ApprovalManager(state, commentService);
-    vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue('Approve All (3)');
+    vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue('Approve All (3)' as never);
 
     await approveAllAndPublish(
       pullRequest(),

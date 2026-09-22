@@ -22,13 +22,23 @@ const PATTERNS: SecretPattern[] = [
   },
   { kind: 'Bearer Token', regex: /\bBearer\s+[A-Za-z0-9\-._~+/]{20,}=*/g },
   { kind: 'Private Key', regex: /-----BEGIN [A-Z ]*PRIVATE KEY-----/g },
-  { kind: 'Azure DevOps PAT-like value', regex: /\b[a-z2-7]{52}\b/g },
+  {
+    kind: 'Azure DevOps PAT-like value',
+    regex: /\b(?:[a-z2-7]{52}|[A-Za-z0-9]{75}AZDO[A-Za-z0-9]{5})\b/g,
+  },
   {
     kind: 'Connection String',
-    regex: /\b(?:Server|Data Source)=.+;.*(?:Password|Pwd)=.+/gi,
+    regex: /\b(?:Server|Data Source)=[^;\r\n]*;[^\r\n]*?\b(?:Password|Pwd)=[^;\r\n]+/gi,
   },
   { kind: 'Password Assignment', regex: /\bpassword\s*[:=]\s*['"][^'"\s]{6,}['"]/gi },
-  { kind: 'GitHub Token', regex: /\bgh[pousr]_[A-Za-z0-9]{36,}\b/g },
+  {
+    kind: 'GitHub Token',
+    regex: /\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{20,})\b/g,
+  },
+  {
+    kind: 'Secret Assignment',
+    regex: /\b(?:api[_-]?key|password|secret|access[_-]?token)["']?\s*[:=]\s*["']?[^\s"',;]{8,}/gi,
+  },
 ];
 
 export function detectSecrets(content: string): SecretMatch[] {
@@ -53,4 +63,17 @@ function redact(value: string): string {
     return '****';
   }
   return `${value.slice(0, 4)}…${value.slice(-4)}`;
+}
+
+const sensitiveValues = new Set<string>();
+
+/** Register actual credentials as well as recognizing common token formats. */
+export function registerSecret(value: string): void {
+  if (value) sensitiveValues.add(value);
+}
+
+export function redactSecrets(text: string): string {
+  for (const value of sensitiveValues) text = text.split(value).join('[REDACTED]');
+  for (const pattern of PATTERNS) text = text.replace(pattern.regex, '[REDACTED]');
+  return text.replace(/\b(?:Bearer|Basic)\s+[^\s]+/gi, '[REDACTED]');
 }

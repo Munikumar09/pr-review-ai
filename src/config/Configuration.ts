@@ -21,11 +21,17 @@ export class Configuration {
     return vscode.workspace.getConfiguration(EXTENSION_ID);
   }
 
+  /** Security-sensitive choices must come from the user's settings, never a repository. */
+  private userSetting<T>(key: string, fallback: T): T {
+    const setting = this.section.inspect<T>(key);
+    return setting?.globalValue ?? setting?.defaultValue ?? fallback;
+  }
+
   getConnection(): AzureDevOpsConnectionConfig {
     return {
-      organization: this.section.get<string>(CONFIG_KEYS.organization, ''),
-      project: this.section.get<string>(CONFIG_KEYS.project, ''),
-      repository: this.section.get<string>(CONFIG_KEYS.repository, ''),
+      organization: this.userSetting<string>(CONFIG_KEYS.organization, ''),
+      project: this.userSetting<string>(CONFIG_KEYS.project, ''),
+      repository: this.userSetting<string>(CONFIG_KEYS.repository, ''),
     };
   }
 
@@ -42,7 +48,7 @@ export class Configuration {
   }
 
   getAIProvider(): AIProviderId {
-    return this.section.get<AIProviderId>(CONFIG_KEYS.aiProvider, 'mock');
+    return this.userSetting<AIProviderId>(CONFIG_KEYS.aiProvider, 'mock');
   }
 
   async setAIProvider(provider: AIProviderId): Promise<void> {
@@ -50,11 +56,13 @@ export class Configuration {
   }
 
   getAIMaxFindings(): number {
-    return this.section.get<number>(CONFIG_KEYS.aiMaxFindings, 20);
+    const value = this.section.get<number>(CONFIG_KEYS.aiMaxFindings, 20);
+    return Number.isFinite(value) ? Math.max(1, Math.min(100, Math.floor(value))) : 20;
   }
 
   getAIMinConfidence(): number {
-    return this.section.get<number>(CONFIG_KEYS.aiMinConfidence, 0.75);
+    const value = this.section.get<number>(CONFIG_KEYS.aiMinConfidence, 0.75);
+    return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0.75;
   }
 
   getAIReviewCategories(): FindingCategory[] {
@@ -68,12 +76,12 @@ export class Configuration {
   }
 
   getOpenCodeCommand(): string {
-    return this.section.get<string>(CONFIG_KEYS.opencodeCommand, 'opencode');
+    return this.userSetting<string>(CONFIG_KEYS.opencodeCommand, 'opencode');
   }
 
   /** Model passed to OpenCode as `-m provider/model`. Empty means "let OpenCode use its own default". */
   getOpenCodeModel(): string {
-    return this.section.get<string>(CONFIG_KEYS.opencodeModel, '').trim();
+    return this.userSetting<string>(CONFIG_KEYS.opencodeModel, '').trim();
   }
 
   async setOpenCodeModel(model: string): Promise<void> {
@@ -82,7 +90,7 @@ export class Configuration {
 
   /** Preferred Copilot chat model id/family. Empty means "use the first model VS Code offers". */
   getCopilotModel(): string {
-    return this.section.get<string>(CONFIG_KEYS.copilotModel, '').trim();
+    return this.userSetting<string>(CONFIG_KEYS.copilotModel, '').trim();
   }
 
   async setCopilotModel(model: string): Promise<void> {
@@ -91,7 +99,7 @@ export class Configuration {
 
   /** Extra instructions appended to (never replacing) the built-in review prompt. */
   getAICustomInstructions(): string {
-    return this.section.get<string>(CONFIG_KEYS.aiCustomInstructions, '').trim();
+    return this.userSetting<string>(CONFIG_KEYS.aiCustomInstructions, '').trim();
   }
 
   /** When false, published comments omit the "[AI Review - ...]" prefix, confidence and provider name. */
@@ -112,7 +120,7 @@ export class Configuration {
   }
 
   isSecretDetectionEnabled(): boolean {
-    return this.section.get<boolean>(CONFIG_KEYS.secretDetection, true);
+    return this.userSetting<boolean>(CONFIG_KEYS.secretDetection, true);
   }
 
   onDidChange(listener: (e: vscode.ConfigurationChangeEvent) => void): vscode.Disposable {

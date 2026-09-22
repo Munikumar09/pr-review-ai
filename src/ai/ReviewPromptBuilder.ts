@@ -35,12 +35,19 @@ export class ReviewPromptBuilder {
   build(context: ReviewContext, options: ReviewOptions): string {
     const template = this.readTemplate('code-review.md');
 
-    return template
-      .replace('{{PR_METADATA}}', this.buildMetadataSection(context, options))
-      .replace('{{FILES}}', this.buildFilesSection(context))
-      .replace('{{EXISTING_COMMENTS}}', this.buildCommentsSection(context))
-      .replace('{{MODE_INSTRUCTIONS}}', this.buildModeInstructions(options))
-      .replace('{{CUSTOM_INSTRUCTIONS}}', this.buildCustomInstructionsSection(options));
+    const sections: Record<string, string> = {
+      PR_METADATA: this.buildMetadataSection(context, options),
+      FILES: this.buildFilesSection(context),
+      EXISTING_COMMENTS: this.buildCommentsSection(context),
+      MODE_INSTRUCTIONS: this.buildModeInstructions(options),
+      CUSTOM_INSTRUCTIONS: this.buildCustomInstructionsSection(options),
+    };
+    // A single callback replacement prevents $ substitution and recursive expansion of
+    // template markers embedded in attacker-controlled PR descriptions or file content.
+    return template.replace(
+      /{{(PR_METADATA|FILES|EXISTING_COMMENTS|MODE_INSTRUCTIONS|CUSTOM_INSTRUCTIONS)}}/g,
+      (_match, key: string) => sections[key],
+    );
   }
 
   private buildMetadataSection(context: ReviewContext, options: ReviewOptions): string {

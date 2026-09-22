@@ -112,7 +112,7 @@ export async function approveAllAndPublish(
     { modal: true },
     `Approve All (${total})`,
   );
-  if (choice === undefined) {
+  if (choice !== `Approve All (${total})`) {
     return;
   }
 
@@ -131,7 +131,7 @@ export async function approveAllAndPublish(
 }
 
 /**
- * Manual retry/catch-up: publishes any finding still sitting at "approved"/"edited" that hasn't
+ * Manual retry/catch-up: publishes any finding still sitting at "approved" that hasn't
  * been published yet (e.g. because its automatic publish on Approve failed).
  */
 export async function publishApprovedComments(

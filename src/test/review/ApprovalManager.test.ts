@@ -123,7 +123,7 @@ describe('formatFindingAsComment', () => {
   it('strips severity/category label, confidence and provider when attribution is disabled', () => {
     const text = formatFindingAsComment(finding(), { includeAttribution: false });
     expect(text).toContain('Possible null dereference');
-    expect(text).toContain(finding().description);
+    expect(text).toContain('Value may be null before use');
     expect(text).not.toContain('AI Review');
     expect(text).not.toContain('HIGH');
     expect(text).not.toContain('Confidence');
@@ -135,7 +135,7 @@ describe('formatFindingAsComment', () => {
     const text = formatFindingAsComment(finding({ suggestedFix: 'Add a null check.' }), {
       includeAttribution: false,
     });
-    expect(text).toContain('Add a null check.');
+    expect(text).toContain('Add a null check');
   });
 });
 
@@ -256,4 +256,48 @@ describe('ApprovalManager.publishApproved', () => {
     expect(publishedContent).not.toContain('Confidence');
     expect(publishedContent).toContain('Possible null dereference');
   });
+});
+
+it('never publishes an edited finding without a new explicit approval', async () => {
+  const state = new ReviewState(makeStateStore());
+  await state.set(session([finding({ status: 'edited' })]));
+  const addComment = vi.fn();
+  const manager = new ApprovalManager(state, { getThreads: vi.fn(async () => []), addComment });
+  expect(manager.getSummary(1).readyToPublish).toBe(0);
+  await manager.publishApproved(1);
+  expect(addComment).not.toHaveBeenCalled();
+});
+
+it('rechecks approval after an asynchronous fetch and preserves the edit', async () => {
+  const state = new ReviewState(makeStateStore());
+  await state.set(session([finding()]));
+  const addComment = vi.fn();
+  const manager = new ApprovalManager(state, {
+    getThreads: vi.fn(async () => {
+      await state.set(session([finding({ status: 'edited', description: 'New unapproved text' })]));
+      return [];
+    }),
+    addComment,
+  });
+  await manager.publishApproved(1);
+  expect(addComment).not.toHaveBeenCalled();
+  expect(state.get(1)?.findings[0].description).toBe('New unapproved text');
+});
+
+it('prevents concurrent publication of the same approved finding', async () => {
+  const state = new ReviewState(makeStateStore());
+  await state.set(session([finding()]));
+  const addComment = vi.fn(async () => ({ id: 1, threadId: 1 }) as PullRequestComment);
+  const manager = new ApprovalManager(state, { getThreads: vi.fn(async () => []), addComment });
+  await Promise.all([manager.publishApproved(1), manager.publishApproved(1)]);
+  expect(addComment).toHaveBeenCalledOnce();
+});
+
+it('publishes reviewed AI text literally without active Markdown images or HTML', () => {
+  const text = formatFindingAsComment(
+    finding({ description: '![leak](https://evil.test/private) <img src="https://evil.test">' }),
+  );
+  expect(text).not.toContain('![leak](');
+  expect(text).not.toContain('<img');
+  expect(text).toContain('&lt;img');
 });

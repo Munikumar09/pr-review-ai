@@ -117,3 +117,66 @@ describe('CopilotProvider model selection', () => {
     expect(a.sendRequest).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('Copilot outbound secret gate', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it.each(['removed diff', 'PR metadata', 'comment', 'custom instructions'])(
+    'blocks a secret in %s before sendRequest',
+    async (location) => {
+      const secret = 'AKIAABCDEFGHIJKLMNOP';
+      const review = context();
+      const opts = options();
+      if (location === 'removed diff') review.files[0].diff = `@@ -1 +1 @@\n-${secret}\n+removed`;
+      if (location === 'PR metadata') review.pullRequest.description = secret;
+      if (location === 'comment')
+        review.existingComments = [
+          {
+            id: 1,
+            threadId: 1,
+            author: 'dev',
+            content: secret,
+            status: 'active',
+            publishedDate: '',
+          },
+        ];
+      if (location === 'custom instructions') opts.customInstructions = secret;
+      const model = fakeModel('a', 'a', 'a');
+      vi.spyOn(vscode.lm, 'selectChatModels').mockResolvedValue([model.model]);
+      const warning = vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue(undefined);
+      const provider = new CopilotProvider(() => '', new ReviewPromptBuilder(repoRoot));
+      await expect(provider.review(review, opts)).rejects.toThrow('cancelled');
+      expect(warning).toHaveBeenCalledOnce();
+      expect(JSON.stringify(warning.mock.calls)).not.toContain(secret);
+      expect(model.sendRequest).not.toHaveBeenCalled();
+    },
+  );
+
+  it('sends the exact inspected prompt after explicit consent', async () => {
+    const review = context();
+    review.pullRequest.title = 'AKIAABCDEFGHIJKLMNOP';
+    const model = fakeModel('a', 'a', 'a');
+    vi.spyOn(vscode.lm, 'selectChatModels').mockResolvedValue([model.model]);
+    vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue('Send to AI Provider' as never);
+    const builder = new ReviewPromptBuilder(repoRoot);
+    await new CopilotProvider(() => '', builder).review(review, options());
+    expect(model.sendRequest).toHaveBeenCalledWith(
+      [vscode.LanguageModelChatMessage.User(builder.build(review, options()))],
+      {},
+      undefined,
+    );
+  });
+
+  it('rejects an oversized response', async () => {
+    const model = fakeModel('a', 'a', 'a');
+    model.sendRequest.mockResolvedValue({
+      text: (async function* () {
+        yield 'x'.repeat(2 * 1024 * 1024 + 1);
+      })(),
+    });
+    vi.spyOn(vscode.lm, 'selectChatModels').mockResolvedValue([model.model]);
+    await expect(
+      new CopilotProvider(() => '', new ReviewPromptBuilder(repoRoot)).review(context(), options()),
+    ).rejects.toThrow('size limit');
+  });
+});

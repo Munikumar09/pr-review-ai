@@ -1,3 +1,7 @@
+import * as vscode from 'vscode';
+import { existsSync } from 'fs';
+import { SpawnOptions } from 'child_process';
+import { MAX_AI_RESPONSE_BYTES } from '../../utils/securityLimits';
 import { EventEmitter } from 'events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { spawn } from 'child_process';
@@ -102,7 +106,14 @@ describe('OpenCodeProvider model configuration', () => {
     await provider.review(context(), options());
 
     const runCall = mockedSpawn.mock.calls.find((c) => (c[1] as string[])?.[0] === 'run');
-    expect(runCall?.[1]).toEqual(['run', '--format', 'json', '--pure']);
+    expect(runCall?.[1]).toEqual([
+      'run',
+      '--format',
+      'json',
+      '--pure',
+      '--agent',
+      expect.stringMatching(/^azure-pr-review-/),
+    ]);
   });
 
   it('passes --model <configured model> when one is configured', async () => {
@@ -121,6 +132,8 @@ describe('OpenCodeProvider model configuration', () => {
       '--format',
       'json',
       '--pure',
+      '--agent',
+      expect.stringMatching(/^azure-pr-review-/),
       '--model',
       'anthropic/claude-sonnet-4-5',
     ]);
@@ -157,7 +170,7 @@ describe('OpenCodeProvider model configuration', () => {
     const models = await provider.listModels();
 
     expect(models).toEqual(['opencode/big-pickle', 'anthropic/claude-sonnet-4-5']);
-    expect(mockedSpawn.mock.calls[0][1]).toEqual(['models']);
+    expect(mockedSpawn.mock.calls[0][1]).toEqual(['models', '--pure']);
   });
 
   it('listModels returns an empty array (not a throw) if the CLI fails', async () => {
@@ -175,5 +188,100 @@ describe('OpenCodeProvider model configuration', () => {
       new ReviewPromptBuilder(repoRoot),
     );
     await expect(provider.listModels()).resolves.toEqual([]);
+  });
+});
+
+describe('OpenCode security boundary', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+    vi.unstubAllEnvs();
+    Object.assign(vscode.workspace, { isTrusted: true });
+  });
+
+  it('denies all tools, disables sharing, ignores inherited overrides and cleans every scratch directory', async () => {
+    vi.stubEnv('OPENCODE_PERMISSION', '{"*":"allow"}');
+    vi.stubEnv('OPENCODE_CONFIG', '/workspace/attacker.json');
+    vi.stubEnv('OPENCODE_AUTO_SHARE', 'true');
+    mockedSpawn.mockImplementation(() => fakeChild(ndjsonText('{"findings": []}')) as never);
+    const provider = new OpenCodeProvider(
+      () => 'opencode',
+      () => '',
+      new ReviewPromptBuilder(repoRoot),
+    );
+    await provider.listModels();
+    await provider.review(context(), options());
+    for (const call of mockedSpawn.mock.calls) {
+      const opts = call[2] as SpawnOptions;
+      expect(opts.shell).toBe(false);
+      expect(String(opts.cwd)).toContain('azure-pr-review-');
+      expect(existsSync(String(opts.cwd))).toBe(false);
+      expect(opts.env?.OPENCODE_PERMISSION).toBe('{"*":"deny"}');
+      expect(opts.env?.OPENCODE_CONFIG).toBeUndefined();
+      expect(opts.env?.OPENCODE_AUTO_SHARE).toBe('false');
+      expect(opts.env?.OPENCODE_DISABLE_PROJECT_CONFIG).toBe('true');
+      const config = JSON.parse(opts.env!.OPENCODE_CONFIG_CONTENT!);
+      expect(config.permission).toBe('deny');
+      expect(config.share).toBe('disabled');
+      if ((call[1] as string[])[0] === 'run') {
+        const args = call[1] as string[];
+        expect(config.agent[args[args.indexOf('--agent') + 1]].permission).toBe('deny');
+      }
+    }
+  });
+
+  it('never spawns a workspace-relative executable', async () => {
+    const provider = new OpenCodeProvider(
+      () => './malicious-cli',
+      () => '',
+      new ReviewPromptBuilder(repoRoot),
+    );
+    expect(await provider.isAvailable()).toBe(false);
+    expect(mockedSpawn).not.toHaveBeenCalled();
+  });
+
+  it('never spawns in an untrusted workspace or after cancellation', async () => {
+    const provider = new OpenCodeProvider(
+      () => 'opencode',
+      () => '',
+      new ReviewPromptBuilder(repoRoot),
+    );
+    Object.assign(vscode.workspace, { isTrusted: false });
+    expect(await provider.isAvailable()).toBe(false);
+    Object.assign(vscode.workspace, { isTrusted: true });
+    const token = new vscode.CancellationTokenSource();
+    token.cancel();
+    await expect(provider.review(context(), options(), token.token)).rejects.toThrow('cancelled');
+    expect(mockedSpawn).not.toHaveBeenCalled();
+  });
+
+  it('kills a child that exceeds the output limit instead of accepting truncated output', async () => {
+    const child = fakeChild('x'.repeat(MAX_AI_RESPONSE_BYTES + 1));
+    mockedSpawn.mockImplementation(() => child as never);
+    const provider = new OpenCodeProvider(
+      () => 'opencode',
+      () => '',
+      new ReviewPromptBuilder(repoRoot),
+    );
+    expect(await provider.listModels()).toEqual([]);
+    expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+  });
+
+  it('does not disclose stderr in provider errors', async () => {
+    const child = fakeChild('');
+    child.stdin.end = () =>
+      queueMicrotask(() => {
+        child.stderr.emit('data', Buffer.from('PRIVATE_SOURCE_AND_CREDENTIAL'));
+        child.emit('close', 1);
+      });
+    mockedSpawn
+      .mockImplementationOnce(() => fakeChild('1.0') as never)
+      .mockImplementation(() => child as never);
+    const provider = new OpenCodeProvider(
+      () => 'opencode',
+      () => '',
+      new ReviewPromptBuilder(repoRoot),
+    );
+    await expect(provider.review(context(), options())).rejects.toThrow('Check the CLI');
   });
 });

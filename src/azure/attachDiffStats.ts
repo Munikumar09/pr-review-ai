@@ -31,7 +31,7 @@ export async function attachDiffStats(
         file.additions = diff.additions;
         file.deletions = diff.deletions;
       } catch (err) {
-        logger.warn(`Unable to compute diff stats for ${file.path}.`, String(err));
+        logger.warn(`Unable to compute diff stats for ${file.path}.`, err);
       }
     }
   };

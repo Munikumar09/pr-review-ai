@@ -125,14 +125,14 @@ function summaryLabel(findings: ReviewFinding[]): string {
 
 function buildTooltip(finding: ReviewFinding): vscode.MarkdownString {
   const md = new vscode.MarkdownString();
-  md.appendMarkdown(`**${finding.severity.toUpperCase()} · ${finding.category}**\n\n`);
-  md.appendMarkdown(`${finding.description}\n\n`);
+  md.appendText(`${finding.severity.toUpperCase()} · ${finding.category}\n\n`);
+  md.appendText(`${finding.description}\n\n`);
   if (finding.suggestedFix) {
-    md.appendMarkdown(`_Suggested fix:_ ${finding.suggestedFix}\n\n`);
+    md.appendText(`Suggested fix: ${finding.suggestedFix}\n\n`);
   }
   md.appendMarkdown(`Confidence: ${Math.round(finding.confidence * 100)}%`);
   if (finding.mappingError) {
-    md.appendMarkdown(`\n\n⚠️ ${finding.mappingError}`);
+    md.appendText(`\n\n⚠️ ${finding.mappingError}`);
   }
   return md;
 }

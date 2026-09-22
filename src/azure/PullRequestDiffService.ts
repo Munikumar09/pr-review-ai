@@ -1,4 +1,5 @@
-import { createTwoFilesPatch } from 'diff';
+import { structuredPatch, formatPatch, PatchOptions } from 'diff';
+import { FileContentError } from '../utils/errors';
 import { AzureDevOpsClient } from './AzureDevOpsClient';
 import { PullRequestFile } from '../models/PullRequestFile';
 import { FileDiff } from '../models/FileDiff';
@@ -28,9 +29,9 @@ export class PullRequestDiffService {
     const newContent =
       file.changeType === 'delete' ? '' : await this.getContentCached(file.path, sourceCommitId);
 
-    const patch =
+    const structured =
       oldContent !== newContent
-        ? createTwoFilesPatch(
+        ? structuredPatch(
             file.originalPath ?? file.path,
             file.path,
             oldContent,
@@ -39,10 +40,16 @@ export class PullRequestDiffService {
             '',
             {
               context: 3,
-            },
+              maxEditLength: 2_000,
+              timeout: 250,
+            } as PatchOptions & { timeout: number },
           )
-        : '';
+        : undefined;
 
+    if (oldContent !== newContent && structured === undefined) {
+      throw new FileContentError(file.path);
+    }
+    const patch = structured ? formatPatch(structured) : '';
     const { additions, deletions } = countChanges(patch);
 
     return {

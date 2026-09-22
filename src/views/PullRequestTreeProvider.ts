@@ -23,9 +23,9 @@ export class PullRequestItem extends vscode.TreeItem {
     super(`#${pullRequest.id} ${pullRequest.title}`, vscode.TreeItemCollapsibleState.None);
     this.contextValue = 'pullRequest';
     this.description = `${pullRequest.sourceBranch} → ${pullRequest.targetBranch}`;
-    this.tooltip = new vscode.MarkdownString(
-      `**#${pullRequest.id} ${pullRequest.title}**\n\n` +
-        `${pullRequest.description || '_No description_'}\n\n` +
+    this.tooltip = new vscode.MarkdownString().appendText(
+      `#${pullRequest.id} ${pullRequest.title}\n\n` +
+        `${pullRequest.description || 'No description'}\n\n` +
         `Author: ${pullRequest.createdBy}\n\nStatus: ${pullRequest.status}`,
     );
     this.iconPath = new vscode.ThemeIcon(

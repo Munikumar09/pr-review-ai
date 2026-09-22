@@ -43,10 +43,6 @@ export async function reviewPullRequest(
       return; // user cancelled scope selection
     }
 
-    if (!(await confirmIfSecretsDetected(pullRequest, files, reviewManager))) {
-      return;
-    }
-
     const mode = await pickReviewMode();
     if (!mode) {
       return;
@@ -67,9 +63,6 @@ export async function reviewCurrentFile(
   findingsTree: FindingsTreeProvider,
 ): Promise<void> {
   try {
-    if (!(await confirmIfSecretsDetected(pullRequest, [file], reviewManager))) {
-      return;
-    }
     const mode = await pickReviewMode();
     if (!mode) {
       return;
@@ -118,23 +111,6 @@ async function selectReviewScope(
     return undefined;
   }
   return picked.map((p) => p.file);
-}
-
-async function confirmIfSecretsDetected(
-  pullRequest: PullRequest,
-  files: PullRequestFile[],
-  reviewManager: ReviewManager,
-): Promise<boolean> {
-  const kinds = await reviewManager.checkForSecrets(pullRequest, files);
-  if (kinds.length === 0) {
-    return true;
-  }
-  const choice = await vscode.window.showWarningMessage(
-    `Potential secret detected in review context (${kinds.join(', ')}). Continue sending this content to the AI provider?`,
-    { modal: true },
-    'Continue',
-  );
-  return choice === 'Continue';
 }
 
 async function pickReviewMode(): Promise<ReviewMode | undefined> {

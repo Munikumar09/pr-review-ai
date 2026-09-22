@@ -1,3 +1,5 @@
+import { redactSecrets } from './secretDetection';
+
 /** Base class for all errors the extension raises intentionally, carrying a concise user-facing message. */
 export class AzurePrReviewError extends Error {
   constructor(
@@ -97,10 +99,7 @@ export class NetworkTimeoutError extends AzurePrReviewError {
 /** Extracts a safe, concise user-facing message from any thrown value. */
 export function toUserMessage(error: unknown): string {
   if (error instanceof AzurePrReviewError) {
-    return error.userMessage;
-  }
-  if (error instanceof Error) {
-    return error.message;
+    return redactSecrets(error.userMessage);
   }
   return 'An unexpected error occurred.';
 }

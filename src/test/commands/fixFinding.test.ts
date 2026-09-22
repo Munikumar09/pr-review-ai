@@ -96,7 +96,9 @@ describe('fixFinding', () => {
       deletions: 0,
     }));
     const diffManager: DiffManagerFake = { openDiff, revealLine: vi.fn(async () => {}) };
-    vi.spyOn(vscode.window, 'showInformationMessage').mockResolvedValue('Copy Suggested Fix');
+    vi.spyOn(vscode.window, 'showInformationMessage').mockResolvedValue(
+      'Copy Suggested Fix' as never,
+    );
     const writeText = vi.spyOn(vscode.env.clipboard, 'writeText').mockResolvedValue();
 
     await fixFinding(

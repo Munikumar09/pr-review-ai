@@ -1,3 +1,4 @@
+import { openAzureUrl } from '../utils/azureUrl';
 import * as vscode from 'vscode';
 import { PRReviewPanel, PanelMessage } from './PRReviewPanel';
 import { PullRequestService } from '../azure/PullRequestService';
@@ -42,6 +43,14 @@ export class ReviewPanelProvider {
         void this.refresh(pullRequestId);
       }
     });
+  }
+
+  dispose(): void {
+    for (const panel of this.panels.values()) {
+      panel.dispose();
+    }
+    this.panels.clear();
+    this.filesCache.clear();
   }
 
   async show(pullRequest: PullRequest): Promise<void> {
@@ -104,7 +113,7 @@ export class ReviewPanelProvider {
           await this.refresh(pullRequest.id, { reloadFiles: true });
           break;
         case 'openInBrowser':
-          await vscode.env.openExternal(vscode.Uri.parse(pullRequest.webUrl));
+          await openAzureUrl(pullRequest.webUrl);
           break;
         case 'reviewPullRequest':
           await vscode.commands.executeCommand('azurePrReview.reviewPullRequest', pullRequest);

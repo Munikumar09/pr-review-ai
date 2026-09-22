@@ -10,6 +10,9 @@ import { ReviewResultParser } from '../ReviewResultParser';
 import { Logger } from '../../utils/logger';
 import { AIProviderUnavailableError } from '../../utils/errors';
 import { OperationCancelledError } from '../../utils/cancellation';
+import { confirmPrompt } from '../confirmPrompt';
+import { MAX_AI_RESPONSE_BYTES } from '../../utils/securityLimits';
+import { AIResponseMalformedError } from '../../utils/errors';
 
 const UNAVAILABLE_MESSAGE =
   'GitHub Copilot review integration is not available through the supported extension API in this environment.';
@@ -36,6 +39,7 @@ export class CopilotProvider implements AIReviewProvider {
     /** Read live so changing "azurePrReview.copilot.model" applies without a reload. */
     private readonly getModel: () => string,
     private readonly promptBuilder: ReviewPromptBuilder,
+    private readonly secretDetectionEnabled: () => boolean = () => true,
   ) {}
 
   async isAvailable(): Promise<boolean> {
@@ -46,7 +50,7 @@ export class CopilotProvider implements AIReviewProvider {
       const models = await vscode.lm.selectChatModels({ vendor: 'copilot' });
       return models.length > 0;
     } catch (err) {
-      this.logger.warn('Unable to query Copilot chat models.', String(err));
+      this.logger.warn('Unable to query Copilot chat models.', err);
       return false;
     }
   }
@@ -59,7 +63,7 @@ export class CopilotProvider implements AIReviewProvider {
     try {
       return await vscode.lm.selectChatModels({ vendor: 'copilot' });
     } catch (err) {
-      this.logger.warn('Unable to query Copilot chat models.', String(err));
+      this.logger.warn('Unable to query Copilot chat models.', err);
       return [];
     }
   }
@@ -80,6 +84,7 @@ export class CopilotProvider implements AIReviewProvider {
 
     const model = this.selectModel(models);
     const prompt = this.promptBuilder.build(context, options);
+    await confirmPrompt(prompt, this.secretDetectionEnabled(), cancellationToken);
     const messages = [vscode.LanguageModelChatMessage.User(prompt)];
 
     this.logger.info(
@@ -95,25 +100,30 @@ export class CopilotProvider implements AIReviewProvider {
       }
       throw new AIProviderUnavailableError(
         this.name,
-        err instanceof Error ? err.message : String(err),
+        'Copilot could not complete the review. Check model access and authentication.',
       );
     }
 
     let text = '';
+    let responseBytes = 0;
     try {
       for await (const fragment of response.text) {
         if (cancellationToken?.isCancellationRequested) {
           throw new OperationCancelledError();
         }
+        responseBytes += Buffer.byteLength(fragment, 'utf8');
+        if (responseBytes > MAX_AI_RESPONSE_BYTES) {
+          throw new AIResponseMalformedError('Copilot output exceeded the size limit.');
+        }
         text += fragment;
       }
     } catch (err) {
-      if (err instanceof OperationCancelledError) {
+      if (err instanceof OperationCancelledError || err instanceof AIResponseMalformedError) {
         throw err;
       }
       throw new AIProviderUnavailableError(
         this.name,
-        err instanceof Error ? err.message : String(err),
+        'Copilot could not complete the review. Check model access and authentication.',
       );
     }
 

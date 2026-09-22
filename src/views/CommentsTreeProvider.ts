@@ -27,7 +27,7 @@ export class CommentItem extends vscode.TreeItem {
     super(truncate(comment.content, 80), vscode.TreeItemCollapsibleState.None);
     this.contextValue = 'comment';
     this.description = `${comment.author} · line ${comment.startLine ?? '-'} · ${comment.status}`;
-    this.tooltip = new vscode.MarkdownString(comment.content);
+    this.tooltip = new vscode.MarkdownString().appendText(comment.content);
     this.iconPath = new vscode.ThemeIcon('comment');
     if (comment.filePath) {
       this.command = {
@@ -57,7 +57,7 @@ export class DraftCommentItem extends vscode.TreeItem {
     this.contextValue = 'draftComment';
     const line = draft.rightFileStartLine ?? draft.leftFileStartLine;
     this.description = `${draft.filePath} · line ${line ?? '-'}`;
-    this.tooltip = new vscode.MarkdownString(draft.content);
+    this.tooltip = new vscode.MarkdownString().appendText(draft.content);
     this.iconPath = new vscode.ThemeIcon('edit');
     this.command = {
       command: 'azurePrReview.openChangedFile',

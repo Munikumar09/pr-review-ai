@@ -97,3 +97,16 @@ describe('ReviewPromptBuilder', () => {
     expect(prompt).not.toMatch(/additional reviewer instructions/i);
   });
 });
+
+it('does not expand template markers or replacement metacharacters from PR data', () => {
+  const review = context();
+  review.pullRequest.description =
+    "{{FILES}} {{MODE_INSTRUCTIONS}} {{CUSTOM_INSTRUCTIONS}} $& $` $'";
+  const prompt = new ReviewPromptBuilder(repoRoot).build(
+    review,
+    options({ customInstructions: 'TRUSTED_CUSTOM_MARKER' }),
+  );
+  expect(prompt).toContain(review.pullRequest.description);
+  expect(prompt.match(/TRUSTED_CUSTOM_MARKER/g)).toHaveLength(1);
+  expect(prompt.match(/@@ -1 \+1 @@/g)).toHaveLength(1);
+});
