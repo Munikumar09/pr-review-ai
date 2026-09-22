@@ -1,0 +1,482 @@
+{
+  "name": "azure-pr-review",
+  "displayName": "Azure DevOps AI PR Review",
+  "description": "Review Azure DevOps pull requests without leaving VS Code, with optional AI-assisted findings that require explicit human approval before publishing.",
+  "version": "0.5.0",
+  "publisher": "local-dev",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Munikumar09/ai-pr-review.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Munikumar09/ai-pr-review/issues"
+  },
+  "homepage": "https://github.com/Munikumar09/ai-pr-review#readme",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:azurePrReview.pullRequests",
+    "onView:azurePrReview.changedFiles",
+    "onView:azurePrReview.findings",
+    "onView:azurePrReview.comments"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "azurePrReview.configure",
+        "title": "Configure Azure DevOps",
+        "category": "Azure PR Review"
+      },
+      {
+        "command": "azurePrReview.signIn",
+        "title": "Sign In",
+        "category": "Azure PR Review"
+      },
+      {
+        "command": "azurePrReview.signOut",
+        "title": "Sign Out",
+        "category": "Azure PR Review"
+      },
+      {
+        "command": "azurePrReview.refresh",
+        "title": "Refresh Pull Requests",
+        "category": "Azure PR Review",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "azurePrReview.openPullRequest",
+        "title": "Open Pull Request",
+        "category": "Azure PR Review"
+      },
+      {
+        "command": "azurePrReview.openPullRequestInBrowser",
+        "title": "Open in Browser",
+        "category": "Azure PR Review",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "azurePrReview.openChangedFile",
+        "title": "Open Diff",
+        "category": "Azure PR Review"
+      },
+      {
+        "command": "azurePrReview.addComment",
+        "title": "Add Review Comment",
+        "category": "Azure PR Review",
+        "icon": "$(comment-add)"
+      },
+      {
+        "command": "azurePrReview.refreshComments",
+        "title": "Refresh Comments",
+        "category": "Azure PR Review",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "azurePrReview.publishAllDraftComments",
+        "title": "Publish All Draft Comments",
+        "category": "Azure PR Review",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "azurePrReview.discardAllDraftComments",
+        "title": "Discard All Draft Comments",
+        "category": "Azure PR Review",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "azurePrReview.editDraftComment",
+        "title": "Edit Draft Comment",
+        "category": "Azure PR Review",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "azurePrReview.removeDraftComment",
+        "title": "Remove Draft Comment",
+        "category": "Azure PR Review",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "azurePrReview.reviewPullRequest",
+        "title": "Run AI Review",
+        "category": "Azure PR Review",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "azurePrReview.reviewCurrentFile",
+        "title": "AI Review Current File",
+        "category": "Azure PR Review"
+      },
+      {
+        "command": "azurePrReview.cancelReview",
+        "title": "Cancel AI Review",
+        "category": "Azure PR Review"
+      },
+      {
+        "command": "azurePrReview.clearReview",
+        "title": "Clear AI Review Results",
+        "category": "Azure PR Review",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "azurePrReview.approveFinding",
+        "title": "Approve && Publish Finding",
+        "category": "Azure PR Review",
+        "icon": "$(check)"
+      },
+      {
+        "command": "azurePrReview.removeFinding",
+        "title": "Remove Finding",
+        "category": "Azure PR Review",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "azurePrReview.editFinding",
+        "title": "Edit Finding",
+        "category": "Azure PR Review",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "azurePrReview.fixFinding",
+        "title": "Fix Finding (Go to Code + Suggested Fix)",
+        "category": "Azure PR Review",
+        "icon": "$(lightbulb)"
+      },
+      {
+        "command": "azurePrReview.approveAllFindings",
+        "title": "Approve && Publish All Findings",
+        "category": "Azure PR Review",
+        "icon": "$(check-all)"
+      },
+      {
+        "command": "azurePrReview.selectAIProvider",
+        "title": "Select AI Provider",
+        "category": "Azure PR Review"
+      },
+      {
+        "command": "azurePrReview.selectAIModel",
+        "title": "Select AI Model",
+        "category": "Azure PR Review"
+      },
+      {
+        "command": "azurePrReview.editCustomInstructions",
+        "title": "Edit Custom Review Prompt",
+        "category": "Azure PR Review"
+      },
+      {
+        "command": "azurePrReview.toggleAIAttribution",
+        "title": "Toggle AI Attribution in Published Comments",
+        "category": "Azure PR Review"
+      },
+      {
+        "command": "azurePrReview.publishApprovedComments",
+        "title": "Publish Approved Comments (retry)",
+        "category": "Azure PR Review",
+        "icon": "$(cloud-upload)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "azurePrReview",
+          "title": "Azure PR Review",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "azurePrReview": [
+        {
+          "id": "azurePrReview.pullRequests",
+          "name": "Pull Requests"
+        },
+        {
+          "id": "azurePrReview.changedFiles",
+          "name": "Changed Files"
+        },
+        {
+          "id": "azurePrReview.findings",
+          "name": "Review Findings"
+        },
+        {
+          "id": "azurePrReview.comments",
+          "name": "Comments"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "azurePrReview.refresh",
+          "when": "view == azurePrReview.pullRequests",
+          "group": "navigation"
+        },
+        {
+          "command": "azurePrReview.refreshComments",
+          "when": "view == azurePrReview.comments",
+          "group": "navigation"
+        },
+        {
+          "command": "azurePrReview.publishAllDraftComments",
+          "when": "view == azurePrReview.comments",
+          "group": "navigation"
+        },
+        {
+          "command": "azurePrReview.discardAllDraftComments",
+          "when": "view == azurePrReview.comments",
+          "group": "1_drafts@1"
+        },
+        {
+          "command": "azurePrReview.approveAllFindings",
+          "when": "view == azurePrReview.findings",
+          "group": "navigation"
+        },
+        {
+          "command": "azurePrReview.publishApprovedComments",
+          "when": "view == azurePrReview.findings",
+          "group": "navigation"
+        },
+        {
+          "command": "azurePrReview.clearReview",
+          "when": "view == azurePrReview.findings",
+          "group": "2_clear@1"
+        },
+        {
+          "command": "azurePrReview.configure",
+          "when": "view == azurePrReview.pullRequests",
+          "group": "1_account@1"
+        },
+        {
+          "command": "azurePrReview.signIn",
+          "when": "view == azurePrReview.pullRequests",
+          "group": "1_account@2"
+        },
+        {
+          "command": "azurePrReview.signOut",
+          "when": "view == azurePrReview.pullRequests",
+          "group": "1_account@3"
+        },
+        {
+          "command": "azurePrReview.selectAIProvider",
+          "when": "view == azurePrReview.findings",
+          "group": "1_ai@1"
+        },
+        {
+          "command": "azurePrReview.selectAIModel",
+          "when": "view == azurePrReview.findings",
+          "group": "1_ai@2"
+        },
+        {
+          "command": "azurePrReview.editCustomInstructions",
+          "when": "view == azurePrReview.findings",
+          "group": "1_ai@3"
+        },
+        {
+          "command": "azurePrReview.toggleAIAttribution",
+          "when": "view == azurePrReview.findings",
+          "group": "1_ai@4"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "azurePrReview.openPullRequest",
+          "when": "view == azurePrReview.pullRequests && viewItem == pullRequest",
+          "group": "inline"
+        },
+        {
+          "command": "azurePrReview.reviewPullRequest",
+          "when": "view == azurePrReview.pullRequests && viewItem == pullRequest",
+          "group": "1_review"
+        },
+        {
+          "command": "azurePrReview.openPullRequestInBrowser",
+          "when": "view == azurePrReview.pullRequests && viewItem == pullRequest",
+          "group": "2_open"
+        },
+        {
+          "command": "azurePrReview.openChangedFile",
+          "when": "view == azurePrReview.changedFiles && viewItem == changedFile",
+          "group": "1_open"
+        },
+        {
+          "command": "azurePrReview.reviewCurrentFile",
+          "when": "view == azurePrReview.changedFiles && viewItem == changedFile",
+          "group": "2_review"
+        },
+        {
+          "command": "azurePrReview.addComment",
+          "when": "view == azurePrReview.changedFiles && viewItem == changedFile",
+          "group": "3_comment"
+        },
+        {
+          "command": "azurePrReview.approveFinding",
+          "when": "view == azurePrReview.findings && viewItem == finding",
+          "group": "inline@1"
+        },
+        {
+          "command": "azurePrReview.editFinding",
+          "when": "view == azurePrReview.findings && viewItem == finding",
+          "group": "inline@2"
+        },
+        {
+          "command": "azurePrReview.fixFinding",
+          "when": "view == azurePrReview.findings && viewItem == finding",
+          "group": "inline@3"
+        },
+        {
+          "command": "azurePrReview.removeFinding",
+          "when": "view == azurePrReview.findings && viewItem == finding",
+          "group": "inline@4"
+        },
+        {
+          "command": "azurePrReview.editDraftComment",
+          "when": "view == azurePrReview.comments && viewItem == draftComment",
+          "group": "inline@1"
+        },
+        {
+          "command": "azurePrReview.removeDraftComment",
+          "when": "view == azurePrReview.comments && viewItem == draftComment",
+          "group": "inline@2"
+        }
+      ],
+      "comments/commentThread/context": [
+        {
+          "command": "azurePrReview.addComment",
+          "group": "inline",
+          "when": "commentController == azurePrReview"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Azure PR Review",
+      "properties": {
+        "azurePrReview.organization": {
+          "type": "string",
+          "default": "",
+          "description": "Azure DevOps organization name."
+        },
+        "azurePrReview.project": {
+          "type": "string",
+          "default": "",
+          "description": "Azure DevOps project name."
+        },
+        "azurePrReview.repository": {
+          "type": "string",
+          "default": "",
+          "description": "Azure DevOps repository name."
+        },
+        "azurePrReview.ai.provider": {
+          "type": "string",
+          "enum": [
+            "mock",
+            "opencode",
+            "copilot"
+          ],
+          "default": "mock",
+          "description": "AI review provider to use."
+        },
+        "azurePrReview.ai.maxFindings": {
+          "type": "number",
+          "default": 20,
+          "description": "Maximum number of AI findings to keep per review."
+        },
+        "azurePrReview.ai.minConfidence": {
+          "type": "number",
+          "default": 0.75,
+          "description": "Minimum confidence (0-1) required for an AI finding to be kept."
+        },
+        "azurePrReview.ai.reviewCategories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "bug",
+            "security",
+            "performance",
+            "maintainability",
+            "testing"
+          ],
+          "description": "Finding categories the AI reviewer should focus on."
+        },
+        "azurePrReview.ai.customInstructions": {
+          "type": "string",
+          "default": "",
+          "editPresentation": "multilineText",
+          "description": "Extra instructions appended to the default AI review prompt (e.g. house coding standards, or things to always flag or ignore). This adds to the built-in prompt - it never replaces the data-handling, review, or output-format rules that keep AI findings safe to review."
+        },
+        "azurePrReview.ai.includeAttributionInComments": {
+          "type": "boolean",
+          "default": true,
+          "description": "When enabled, published comments are labeled \"[AI Review - severity - category]\" and end with the confidence percentage and provider name. Disable to publish a plain comment (title, description, suggested fix only) with no indication it came from an AI reviewer."
+        },
+        "azurePrReview.opencode.command": {
+          "type": "string",
+          "default": "opencode",
+          "description": "Command used to invoke the OpenCode CLI."
+        },
+        "azurePrReview.opencode.model": {
+          "type": "string",
+          "default": "",
+          "description": "Model passed to OpenCode as \"provider/model\" (e.g. \"anthropic/claude-sonnet-4-5\"). Leave empty to use OpenCode's own default. Run \"Azure PR Review: Select AI Model\" to pick from models OpenCode currently has access to."
+        },
+        "azurePrReview.copilot.model": {
+          "type": "string",
+          "default": "",
+          "description": "Preferred Copilot chat model id or family (e.g. \"gpt-4o\", \"claude-3.5-sonnet\"). Leave empty to use the first model VS Code makes available. Run \"Azure PR Review: Select AI Model\" to pick from currently available models."
+        },
+        "azurePrReview.logging.level": {
+          "type": "string",
+          "enum": [
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ],
+          "default": "info",
+          "description": "Minimum log level written to the Azure PR Review output channel."
+        },
+        "azurePrReview.security.secretDetection": {
+          "type": "boolean",
+          "default": true,
+          "description": "Warn before sending content that looks like it contains secrets to an AI provider."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run typecheck && node esbuild.js --production",
+    "typecheck": "tsc -p ./",
+    "compile": "npm run typecheck && node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "lint": "eslint src --ext .ts",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/diff": "^5.2.1",
+    "@types/node": "^24.13.6",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "@vscode/vsce": "^4.0.0",
+    "esbuild": "^0.28.2",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.4.5",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.1"
+  },
+  "dependencies": {
+    "azure-devops-node-api": "^12.5.0",
+    "diff": "^5.2.0"
+  }
+}
