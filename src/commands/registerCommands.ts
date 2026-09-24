@@ -35,6 +35,8 @@ import {
   publishApprovedComments,
 } from './publishFinding';
 import { fixFinding } from './fixFinding';
+import { openLocalFile, compareWithLocalFile } from './openLocalFile';
+import { LocalRepositoryLocator } from '../local/LocalRepositoryLocator';
 import { pickRepositories, selectRepositories } from './configureRepositories';
 import {
   selectAIProvider,
@@ -229,6 +231,26 @@ export function registerCommands(
       vscode.window.showErrorMessage(toUserMessage(err));
     }
   });
+
+  const localLocator = new LocalRepositoryLocator();
+
+  register('azurePrReview.openLocalFile', (arg: unknown) =>
+    openLocalFile(
+      arg,
+      changedFilesTree.getCurrentPullRequest(),
+      config.getConnection().organization,
+      localLocator,
+    ),
+  );
+
+  register('azurePrReview.compareWithLocalFile', (arg: unknown) =>
+    compareWithLocalFile(
+      arg,
+      changedFilesTree.getCurrentPullRequest(),
+      config.getConnection().organization,
+      localLocator,
+    ),
+  );
 
   register('azurePrReview.addComment', async (arg: unknown) => {
     if (isChangedFileItem(arg)) {
