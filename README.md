@@ -228,6 +228,11 @@ automatically; re-create those reviews before publishing.
 5. Check the **Comments** view for drafts (shown separately at the top,
    with Edit/Remove actions) and existing published threads; click one to
    jump to its file/line.
+6. If the PR's repository is cloned and open in this window, click the
+   **Open Local File** icon at the top right of the diff editor to open the
+   working-tree file (with LSP, go-to-definition, etc.) at the current line.
+   **Compare with Local File** in the editor `...` menu diffs the PR version
+   against your local copy. Check out the PR branch first for matching lines.
 
 ## AI review workflow
 

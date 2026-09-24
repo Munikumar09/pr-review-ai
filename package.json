@@ -2,7 +2,7 @@
   "name": "azure-pr-review",
   "displayName": "Azure DevOps AI PR Review",
   "description": "Review Azure DevOps pull requests without leaving VS Code, with optional AI-assisted findings that require explicit human approval before publishing.",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "publisher": "munikumarmm",
   "icon": "media/marketplace-icon.png",
   "license": "MIT",
@@ -71,6 +71,18 @@
         "command": "azurePrReview.openChangedFile",
         "title": "Open Diff",
         "category": "Azure PR Review"
+      },
+      {
+        "command": "azurePrReview.openLocalFile",
+        "title": "Open Local File",
+        "category": "Azure PR Review",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "azurePrReview.compareWithLocalFile",
+        "title": "Compare with Local File",
+        "category": "Azure PR Review",
+        "icon": "$(git-compare)"
       },
       {
         "command": "azurePrReview.addComment",
@@ -217,6 +229,18 @@
       ]
     },
     "menus": {
+      "editor/title": [
+        {
+          "command": "azurePrReview.openLocalFile",
+          "when": "resourceScheme == azure-pr-review-diff",
+          "group": "navigation@1"
+        },
+        {
+          "command": "azurePrReview.compareWithLocalFile",
+          "when": "resourceScheme == azure-pr-review-diff",
+          "group": "1_local@1"
+        }
+      ],
       "view/title": [
         {
           "command": "azurePrReview.refresh",

@@ -2,6 +2,18 @@
 
 All notable changes to the "Azure PR Review" extension are documented here.
 
+## [0.7.0]
+
+### Added
+
+- **Open the reviewed file locally**: when the pull request's repository is
+  cloned and open in the current window, PR diff editors show a
+  **Open Local File** button (top right, like the built-in Git diff) that opens
+  the working-tree copy at the current line, so language-server features and
+  code navigation work. **Compare with Local File** (in the `...` menu) diffs
+  the PR version of the file against the local copy. The clone is found by its
+  Azure DevOps git remote; a notice appears if a different branch is checked out.
+
 ## [0.6.0]
 
 ### Added
