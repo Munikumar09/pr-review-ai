@@ -46,7 +46,7 @@ before anything is published back to Azure DevOps.
 ## Requirements
 
 - VS Code 1.85+
-- An Azure DevOps organization, project, and Git repository you have access to
+- An Azure DevOps organization, project, and one or more Git repositories in it you have access to
 - A Personal Access Token with **Code (Read & Write)** and **Pull Request**
   scopes
 - Optional: the [OpenCode](https://opencode.ai) CLI on your `PATH` for the
@@ -59,9 +59,14 @@ before anything is published back to Azure DevOps.
 1. In Azure DevOps, go to **User Settings → Personal Access Tokens** and
    create a token with **Code (Read & Write)** scope (this covers Pull
    Request read/write).
-2. Run **Azure PR Review: Configure Azure DevOps** from the Command Palette
-   and enter your organization, project, and repository names.
-3. Run **Azure PR Review: Sign In** and paste the token when prompted.
+2. Run **Azure PR Review: Sign In** and paste the token when prompted.
+3. Run **Azure PR Review: Configure Azure DevOps** from the Command Palette,
+   enter your organization and project, then tick the repositories to review
+   (the list is fetched with your token; if you're not signed in yet you can
+   type names instead). One PAT covers every repository in the project.
+4. Add or remove repositories later with **Azure PR Review: Select
+   Repositories** (also in the Pull Requests view's `…` menu). With more than
+   one, the Pull Requests view groups PRs under a node per repository.
 
 ## Authentication
 
@@ -89,14 +94,15 @@ installation. The CLI is not bundled with the extension.
 
 Connection, provider, model, custom instructions and secret-detection choices
 are read from **user settings**, so a repository's own `.vscode/settings.json`
-cannot override them. Changing the organization, project or repository
-requires **Reload Window**.
+cannot override them. Changing the organization or project requires
+**Reload Window**; adding or removing repositories applies immediately.
 
 | Setting | Default | Description |
 |---|---|---|
 | `azurePrReview.organization` | `""` | Azure DevOps organization |
 | `azurePrReview.project` | `""` | Azure DevOps project |
-| `azurePrReview.repository` | `""` | Azure DevOps repository |
+| `azurePrReview.repositories` | `[]` | Repositories in the project to review. Set via **Azure PR Review: Select Repositories** |
+| `azurePrReview.repository` | `""` | Deprecated single repository; still honored and folded into `repositories` |
 | `azurePrReview.ai.provider` | `"mock"` | `mock` \| `opencode` \| `copilot` |
 | `azurePrReview.ai.maxFindings` | `20` | Cap on findings kept per review |
 | `azurePrReview.ai.minConfidence` | `0.75` | Minimum confidence (0-1) to keep a finding |

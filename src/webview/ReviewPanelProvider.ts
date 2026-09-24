@@ -53,6 +53,18 @@ export class ReviewPanelProvider {
     this.filesCache.clear();
   }
 
+  /** Closes the panels whose pull request matches, returning their ids. */
+  closeWhere(predicate: (pullRequest: PullRequest) => boolean): number[] {
+    const closed: number[] = [];
+    for (const [id, panel] of [...this.panels]) {
+      if (predicate(panel.pullRequest)) {
+        panel.dispose(); // onDidDispose drops it from the maps
+        closed.push(id);
+      }
+    }
+    return closed;
+  }
+
   async show(pullRequest: PullRequest): Promise<void> {
     let panel = this.panels.get(pullRequest.id);
     if (!panel) {

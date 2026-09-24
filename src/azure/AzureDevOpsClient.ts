@@ -8,6 +8,7 @@ import { PullRequestFile } from '../models/PullRequestFile';
 import { PullRequestComment, ThreadContext } from '../models/PullRequestComment';
 import { AzureDevOpsMapper } from './AzureDevOpsMapper';
 import { AzureDevOpsAuthProvider } from './AzureDevOpsAuth';
+import { isRepositoryConfigured } from '../config/Configuration';
 import { Logger } from '../utils/logger';
 import {
   AzurePrReviewError,
@@ -23,7 +24,13 @@ import {
 export interface AzureDevOpsConnectionOptions {
   organization: string;
   project: string;
-  repository: string;
+  /** Repositories the extension may read from and comment on; everything else is refused. */
+  repositories: string[];
+}
+
+interface RepositoryRef {
+  id: string;
+  name: string;
 }
 
 export interface NewThreadRequest {
@@ -44,6 +51,12 @@ export class AzureDevOpsClient {
   private readonly logger = Logger.getInstance();
   private connection: azdev.WebApi | undefined;
   private gitApiPromise: Promise<IGitApi> | undefined;
+  private userIdPromise: Promise<string | undefined> | undefined;
+  /**
+   * PR ids are unique across an Azure DevOps organization, so an id alone identifies its
+   * repository. Filled from every PR this client maps; unknown ids are looked up once.
+   */
+  private readonly pullRequestRepositories = new Map<number, RepositoryRef>();
 
   constructor(
     private readonly auth: AzureDevOpsAuthProvider,
@@ -91,14 +104,25 @@ export class AzureDevOpsClient {
   reset(): void {
     this.connection = undefined;
     this.gitApiPromise = undefined;
+    this.userIdPromise = undefined;
+    this.pullRequestRepositories.clear();
   }
 
+  /** Checks the PAT can reach every configured repository. */
   async verifyConnection(): Promise<void> {
+    const { repositories } = this.options;
+    if (repositories.length === 0) {
+      throw new ConfigurationError('No Azure DevOps repositories are configured.');
+    }
     const gitApi = await this.getGitApi();
+    await Promise.all(repositories.map((repository) => this.verifyRepository(gitApi, repository)));
+  }
+
+  private async verifyRepository(gitApi: IGitApi, repository: string): Promise<void> {
     try {
-      const repo = await gitApi.getRepository(this.options.repository, this.options.project);
+      const repo = await gitApi.getRepository(repository, this.options.project);
       if (!repo) {
-        throw new RepositoryNotFoundError(this.options.repository);
+        throw new RepositoryNotFoundError(repository);
       }
     } catch (err) {
       if (err instanceof AzurePrReviewError) {
@@ -108,7 +132,7 @@ export class AzureDevOpsClient {
       // report the real cause instead of always blaming the PAT (requirement: accurate error surfacing).
       const statusCode = (err as { statusCode?: number } | undefined)?.statusCode;
       if (statusCode === 404) {
-        throw new RepositoryNotFoundError(this.options.repository, err);
+        throw new RepositoryNotFoundError(repository, err);
       }
       if (statusCode === 403) {
         throw new ConfigurationError(
@@ -121,36 +145,62 @@ export class AzureDevOpsClient {
     }
   }
 
-  async getPullRequests(group: PullRequestGroup): Promise<PullRequest[]> {
+  /**
+   * Lists repository names in any organization/project the PAT can read - used to pick
+   * repositories while configuring, before that organization/project becomes the active one.
+   */
+  async listRepositories(organization: string, project: string): Promise<string[]> {
+    const token = await this.auth.getToken();
+    if (!token) {
+      throw new AuthenticationError();
+    }
+    const connection = new azdev.WebApi(
+      organizationUrl(organization),
+      azdev.getPersonalAccessTokenHandler(token),
+      { allowRedirects: false, socketTimeout: 30_000 },
+    );
+    try {
+      const repos = await (await connection.getGitApi()).getRepositories(project);
+      return repos
+        .filter((repo) => repo.name && !repo.isDisabled)
+        .map((repo) => repo.name!)
+        .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    } catch (err) {
+      const statusCode = (err as { statusCode?: number } | undefined)?.statusCode;
+      if (statusCode === 404) {
+        throw new ConfigurationError(`Project "${project}" was not found in "${organization}".`);
+      }
+      if (statusCode === 403) {
+        throw new ConfigurationError(`The token does not have access to project "${project}".`);
+      }
+      throw new AuthenticationError(err);
+    }
+  }
+
+  async getPullRequests(repository: string, group: PullRequestGroup): Promise<PullRequest[]> {
+    if (!isRepositoryConfigured(this.options.repositories, { name: repository })) {
+      throw new ConfigurationError(`Repository "${repository}" is not configured.`);
+    }
     const gitApi = await this.getGitApi();
     const searchCriteria: GitInterfaces.GitPullRequestSearchCriteria = {
       status: GitInterfaces.PullRequestStatus.Active,
-      repositoryId: this.options.repository,
+      repositoryId: repository,
     };
 
     if (group === 'mine' || group === 'assignedToMe') {
-      try {
-        const connectionData = await (await this.getConnection()).connect();
-        const userId = connectionData.authenticatedUser?.id;
-        if (userId) {
-          if (group === 'mine') {
-            searchCriteria.creatorId = userId;
-          } else {
-            searchCriteria.reviewerId = userId;
-          }
+      const userId = await this.getAuthenticatedUserId();
+      if (userId) {
+        if (group === 'mine') {
+          searchCriteria.creatorId = userId;
+        } else {
+          searchCriteria.reviewerId = userId;
         }
-      } catch (err) {
-        this.logger.warn('Unable to resolve authenticated user for PR filtering.', err);
       }
     }
 
     try {
-      const prs = await gitApi.getPullRequests(
-        this.options.repository,
-        searchCriteria,
-        this.options.project,
-      );
-      return prs.map((pr) => AzureDevOpsMapper.toPullRequest(pr, this.options.organization));
+      const prs = await gitApi.getPullRequests(repository, searchCriteria, this.options.project);
+      return prs.map((pr) => this.toPullRequest(pr));
     } catch (err) {
       throw new ChangedFilesError(err);
     }
@@ -158,18 +208,69 @@ export class AzureDevOpsClient {
 
   async getPullRequest(pullRequestId: number): Promise<PullRequest> {
     const gitApi = await this.getGitApi();
+    let pr: GitInterfaces.GitPullRequest | undefined;
     try {
-      const pr = await gitApi.getPullRequestById(pullRequestId, this.options.project);
-      if (!pr) {
-        throw new PullRequestNotFoundError(pullRequestId);
-      }
-      return AzureDevOpsMapper.toPullRequest(pr, this.options.organization);
+      pr = await gitApi.getPullRequestById(pullRequestId, this.options.project);
     } catch (err) {
-      if (err instanceof PullRequestNotFoundError) {
-        throw err;
-      }
       throw new PullRequestNotFoundError(pullRequestId, err);
     }
+    if (!pr) {
+      throw new PullRequestNotFoundError(pullRequestId);
+    }
+    const mapped = this.toPullRequest(pr);
+    this.repositoryIdFor(pullRequestId); // refuses PRs from repositories that aren't configured
+    return mapped;
+  }
+
+  /** Maps a PR and remembers its repository, so later PR-scoped calls go to the right one. */
+  private toPullRequest(pr: GitInterfaces.GitPullRequest): PullRequest {
+    const mapped = AzureDevOpsMapper.toPullRequest(pr, this.options.organization);
+    if (mapped.id && mapped.repositoryId) {
+      this.pullRequestRepositories.set(mapped.id, {
+        id: mapped.repositoryId,
+        name: mapped.repositoryName,
+      });
+    }
+    return mapped;
+  }
+
+  /**
+   * Resolves which repository a PR-scoped call must target. Re-checked on every call so a
+   * repository removed from settings is refused immediately, including for already-open PRs.
+   */
+  private repositoryIdFor(pullRequestId: number): string {
+    const repo = this.pullRequestRepositories.get(pullRequestId);
+    if (!repo) {
+      throw new PullRequestNotFoundError(pullRequestId);
+    }
+    if (!isRepositoryConfigured(this.options.repositories, repo)) {
+      throw new ConfigurationError(
+        `Pull request #${pullRequestId} belongs to repository "${repo.name}", which is not configured.`,
+      );
+    }
+    return repo.id;
+  }
+
+  private async resolveRepositoryId(pullRequestId: number): Promise<string> {
+    if (!this.pullRequestRepositories.has(pullRequestId)) {
+      await this.getPullRequest(pullRequestId);
+    }
+    return this.repositoryIdFor(pullRequestId);
+  }
+
+  /** Cached per connection - it is the same for every repository and group query. */
+  private getAuthenticatedUserId(): Promise<string | undefined> {
+    if (!this.userIdPromise) {
+      this.userIdPromise = this.getConnection()
+        .then((connection) => connection.connect())
+        .then((data) => data.authenticatedUser?.id)
+        .catch((err) => {
+          this.userIdPromise = undefined;
+          this.logger.warn('Unable to resolve authenticated user for PR filtering.', err);
+          return undefined;
+        });
+    }
+    return this.userIdPromise;
   }
 
   /** Returns the source/target commit ids of the latest iteration, used to fetch file content at the right revisions. */
@@ -177,9 +278,10 @@ export class AzureDevOpsClient {
     pullRequestId: number,
   ): Promise<{ sourceCommitId?: string; targetCommitId?: string }> {
     const gitApi = await this.getGitApi();
+    const repositoryId = await this.resolveRepositoryId(pullRequestId);
     try {
       const iterations = await gitApi.getPullRequestIterations(
-        this.options.repository,
+        repositoryId,
         pullRequestId,
         this.options.project,
       );
@@ -195,9 +297,10 @@ export class AzureDevOpsClient {
 
   async getChangedFiles(pullRequestId: number): Promise<PullRequestFile[]> {
     const gitApi = await this.getGitApi();
+    const repositoryId = await this.resolveRepositoryId(pullRequestId);
     try {
       const iterations = await gitApi.getPullRequestIterations(
-        this.options.repository,
+        repositoryId,
         pullRequestId,
         this.options.project,
       );
@@ -206,7 +309,7 @@ export class AzureDevOpsClient {
         return [];
       }
       const changes = await gitApi.getPullRequestIterationChanges(
-        this.options.repository,
+        repositoryId,
         pullRequestId,
         latest.id,
         this.options.project,
@@ -224,18 +327,23 @@ export class AzureDevOpsClient {
    * source of truth even if the PR branch isn't checked out locally
    * (requirement #13).
    */
-  async getFileContent(path: string, commitId: string | undefined): Promise<string> {
+  async getFileContent(
+    pullRequestId: number,
+    path: string,
+    commitId: string | undefined,
+  ): Promise<string> {
     if (!commitId) {
       return '';
     }
     const gitApi = await this.getGitApi();
+    const repositoryId = await this.resolveRepositoryId(pullRequestId);
     try {
       const versionDescriptor: GitInterfaces.GitVersionDescriptor = {
         version: commitId,
         versionType: GitInterfaces.GitVersionType.Commit,
       };
       const stream = await gitApi.getItemText(
-        this.options.repository,
+        repositoryId,
         path,
         this.options.project,
         undefined,
@@ -253,12 +361,9 @@ export class AzureDevOpsClient {
 
   async getPullRequestThreads(pullRequestId: number): Promise<PullRequestComment[]> {
     const gitApi = await this.getGitApi();
+    const repositoryId = await this.resolveRepositoryId(pullRequestId);
     try {
-      const threads = await gitApi.getThreads(
-        this.options.repository,
-        pullRequestId,
-        this.options.project,
-      );
+      const threads = await gitApi.getThreads(repositoryId, pullRequestId, this.options.project);
       return threads
         .filter((t) => !t.isDeleted && (t.comments?.length ?? 0) > 0)
         .flatMap((t) => AzureDevOpsMapper.toPullRequestComments(t));
@@ -272,6 +377,7 @@ export class AzureDevOpsClient {
     request: NewThreadRequest,
   ): Promise<PullRequestComment> {
     const gitApi = await this.getGitApi();
+    const repositoryId = await this.resolveRepositoryId(pullRequestId);
     const threadContext: GitInterfaces.CommentThreadContext = {
       filePath: `/${request.filePath}`,
       rightFileStart: request.rightFileStartLine
@@ -297,7 +403,7 @@ export class AzureDevOpsClient {
     try {
       const created = await gitApi.createThread(
         thread,
-        this.options.repository,
+        repositoryId,
         pullRequestId,
         this.options.project,
       );
@@ -321,10 +427,11 @@ export class AzureDevOpsClient {
     content: string,
   ): Promise<PullRequestComment> {
     const gitApi = await this.getGitApi();
+    const repositoryId = await this.resolveRepositoryId(pullRequestId);
     try {
       const comment = await gitApi.createComment(
         { content, commentType: GitInterfaces.CommentType.Text },
-        this.options.repository,
+        repositoryId,
         pullRequestId,
         threadId,
         this.options.project,

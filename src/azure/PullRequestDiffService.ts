@@ -25,9 +25,15 @@ export class PullRequestDiffService {
     const oldContent =
       file.changeType === 'add'
         ? ''
-        : await this.getContentCached(file.originalPath ?? file.path, targetCommitId);
+        : await this.getContentCached(
+            pullRequestId,
+            file.originalPath ?? file.path,
+            targetCommitId,
+          );
     const newContent =
-      file.changeType === 'delete' ? '' : await this.getContentCached(file.path, sourceCommitId);
+      file.changeType === 'delete'
+        ? ''
+        : await this.getContentCached(pullRequestId, file.path, sourceCommitId);
 
     const structured =
       oldContent !== newContent
@@ -76,13 +82,18 @@ export class PullRequestDiffService {
     return commits;
   }
 
-  private async getContentCached(path: string, commitId: string | undefined): Promise<string> {
+  private async getContentCached(
+    pullRequestId: number,
+    path: string,
+    commitId: string | undefined,
+  ): Promise<string> {
+    // A commit id pins the content, so this is shared across PRs that touch the same commit.
     const key = `file-content:${commitId}:${path}`;
     const cached = this.cache.getCached<string>(key);
     if (cached !== undefined) {
       return cached;
     }
-    const content = await this.client.getFileContent(path, commitId);
+    const content = await this.client.getFileContent(pullRequestId, path, commitId);
     this.cache.setCached(key, content, FILE_CONTENT_TTL_MS);
     return content;
   }

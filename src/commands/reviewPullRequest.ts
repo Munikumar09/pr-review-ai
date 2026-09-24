@@ -32,7 +32,11 @@ export async function reviewPullRequest(
   findingsTree: FindingsTreeProvider,
 ): Promise<void> {
   try {
-    const allFiles = await prService.getChangedFiles(pullRequest.id);
+    // Usually cached, but a cold fetch hits Azure DevOps before any UI appears - show it's working.
+    const allFiles = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Window, title: 'Loading changed files…' },
+      () => prService.getChangedFiles(pullRequest.id),
+    );
     if (allFiles.length === 0) {
       vscode.window.showInformationMessage('This pull request has no changed files to review.');
       return;

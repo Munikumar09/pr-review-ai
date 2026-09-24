@@ -7,7 +7,9 @@ export const SECRET_KEYS = {
 export const CONFIG_KEYS = {
   organization: 'organization',
   project: 'project',
+  /** @deprecated Single-repository setting, still honored and merged into `repositories`. */
   repository: 'repository',
+  repositories: 'repositories',
   aiProvider: 'ai.provider',
   aiMaxFindings: 'ai.maxFindings',
   aiMinConfidence: 'ai.minConfidence',

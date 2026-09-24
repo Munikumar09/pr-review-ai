@@ -1,5 +1,9 @@
 import * as vscode from 'vscode';
-import { Configuration } from './config/Configuration';
+import {
+  AzureDevOpsConnectionConfig,
+  Configuration,
+  isRepositoryConfigured,
+} from './config/Configuration';
 import { PatAuthProvider } from './azure/AzureDevOpsAuth';
 import { AzureDevOpsClient } from './azure/AzureDevOpsClient';
 import { PullRequestService } from './azure/PullRequestService';
@@ -28,6 +32,7 @@ import { CommentsTreeProvider } from './views/CommentsTreeProvider';
 import { ReviewPanelProvider } from './webview/ReviewPanelProvider';
 import { registerCommands } from './commands/registerCommands';
 import { ConfigurationError } from './utils/errors';
+import { PullRequest } from './models/PullRequest';
 
 export function activate(context: vscode.ExtensionContext): void {
   if (!vscode.workspace.isTrusted) {
@@ -39,16 +44,31 @@ export function activate(context: vscode.ExtensionContext): void {
   logger.info('Azure PR Review extension activating.');
 
   const auth = new PatAuthProvider(context.secrets);
-  // Pin all UI, caches and in-flight operations to one repository until reload.
+  // Pin the organization and project until reload: persisted reviews/drafts are scoped to them.
+  // Repositories may change live - PR ids are unique across an organization, and the client
+  // refuses any PR whose repository is no longer configured.
   const connection = config.getConnection();
-  const connectionScope = JSON.stringify(connection);
+  const { organization, project } = connection;
+  const isActiveProject = (c: AzureDevOpsConnectionConfig) =>
+    c.organization === organization && c.project === project;
   const client = new AzureDevOpsClient(auth, () => {
-    if (JSON.stringify(config.getConnection()) !== connectionScope) {
-      throw new ConfigurationError('Azure DevOps connection changed. Reload the window to apply it.');
+    const current = config.getConnection();
+    if (!isActiveProject(current)) {
+      throw new ConfigurationError(
+        'Azure DevOps connection changed. Reload the window to apply it.',
+      );
     }
-    return connection;
+    return current;
   });
-  const cache = new StateStore(context, connectionScope);
+  const cache = new StateStore(context, JSON.stringify({ organization, project }));
+  // Before multi-repository support, state was scoped to {organization, project, repository}.
+  void cache
+    .adoptLegacyScopes(
+      connection.repositories.map((repository) =>
+        JSON.stringify({ organization, project, repository }),
+      ),
+    )
+    .catch((err) => logger.warn('Unable to migrate single-repository review state.', err));
 
   const prService = new PullRequestService(client, cache);
   const commentService = new PullRequestCommentService(client, cache);
@@ -75,24 +95,21 @@ export function activate(context: vscode.ExtensionContext): void {
   );
   providers.set(opencodeProvider.id, opencodeProvider);
   const copilotProvider = new CopilotProvider(
-    () => config.getCopilotModel(), promptBuilder, () => config.isSecretDetectionEnabled(),
+    () => config.getCopilotModel(),
+    promptBuilder,
+    () => config.isSecretDetectionEnabled(),
   );
   providers.set(copilotProvider.id, copilotProvider);
 
   const reviewState = new ReviewState(cache);
-  const reviewManager = new ReviewManager(
-    orchestrator,
-    reviewState,
-    config,
-    providers,
-  );
+  const reviewManager = new ReviewManager(orchestrator, reviewState, config, providers);
   const findingManager = new FindingManager(reviewState);
   const approvalManager = new ApprovalManager(reviewState, commentService, () =>
     config.isAIAttributionIncluded(),
   );
   const draftManager = new DraftCommentManager(cache);
 
-  const prTree = new PullRequestTreeProvider(prService);
+  const prTree = new PullRequestTreeProvider(prService, () => config.getConnection().repositories);
   const changedFilesTree = new ChangedFilesTreeProvider(prService, diffService);
   const findingsTree = new FindingsTreeProvider(reviewState);
   const commentsTree = new CommentsTreeProvider(commentService, draftManager);
@@ -156,7 +173,8 @@ export function activate(context: vscode.ExtensionContext): void {
       logger.setLevel(config.getLogLevel());
       client.reset();
       prService.invalidateAll();
-      if (JSON.stringify(config.getConnection()) !== connectionScope) {
+      const current = config.getConnection();
+      if (!isActiveProject(current)) {
         reviewManager.cancelAll();
         panelProvider.dispose();
         diffContentProvider.clear('');
@@ -165,14 +183,33 @@ export function activate(context: vscode.ExtensionContext): void {
         commentsTree.setPullRequest(undefined);
         if (connectionChangeNotified) return;
         connectionChangeNotified = true;
-        void vscode.window.showInformationMessage(
-          'Azure DevOps connection changed. Reload the window to switch repositories safely.',
-          'Reload Window',
-        ).then((choice) => {
-          if (choice === 'Reload Window') {
-            void vscode.commands.executeCommand('workbench.action.reloadWindow');
-          }
-        });
+        void vscode.window
+          .showInformationMessage(
+            'Azure DevOps connection changed. Reload the window to switch organization or project safely.',
+            'Reload Window',
+          )
+          .then((choice) => {
+            if (choice === 'Reload Window') {
+              void vscode.commands.executeCommand('workbench.action.reloadWindow');
+            }
+          });
+      } else {
+        // Drop anything open for a repository that was just removed; the client already refuses it.
+        const removed = (pr: PullRequest) =>
+          !isRepositoryConfigured(current.repositories, {
+            id: pr.repositoryId,
+            name: pr.repositoryName,
+          });
+        for (const id of panelProvider.closeWhere(removed)) {
+          reviewManager.cancelReview(id);
+        }
+        const open = changedFilesTree.getCurrentPullRequest();
+        if (open && removed(open)) {
+          reviewManager.cancelReview(open.id);
+          changedFilesTree.setPullRequest(undefined);
+          findingsTree.setPullRequest(undefined);
+          commentsTree.setPullRequest(undefined);
+        }
       }
       prTree.refresh();
     }),
@@ -187,7 +224,7 @@ export function activate(context: vscode.ExtensionContext): void {
     logger.info('Azure DevOps connection is not configured yet.');
     void vscode.window
       .showInformationMessage(
-        'Azure PR Review: configure your Azure DevOps organization, project and repository to get started.',
+        'Azure PR Review: configure your Azure DevOps organization, project and repositories to get started.',
         'Configure',
       )
       .then((choice) => {

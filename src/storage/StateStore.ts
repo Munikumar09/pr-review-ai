@@ -29,12 +29,45 @@ export class StateStore {
     private readonly context: vscode.ExtensionContext,
     connectionScope = 'unconfigured',
   ) {
-    this.scope = createHash('sha256').update(connectionScope).digest('hex');
+    this.scope = scopeHash(connectionScope);
   }
 
-  private key(base: string): string {
+  private key(base: string, scope = this.scope): string {
     // Legacy unscoped entries cannot safely be attributed to a repository.
-    return `${base}:${this.scope}`;
+    return `${base}:${scope}`;
+  }
+
+  /**
+   * Moves reviews/drafts saved under older, narrower scopes into this one - e.g. the
+   * single-repository connection identities used before several repositories could be
+   * configured. Callers pass only scopes known to belong to this scope, so the entries'
+   * ownership is not guessed. Existing entries win per PR, and the old keys are removed so a
+   * review cleared afterwards can't reappear on the next activation.
+   */
+  async adoptLegacyScopes(legacyScopes: string[]): Promise<void> {
+    const state = this.context.workspaceState;
+    for (const legacy of legacyScopes) {
+      const scope = scopeHash(legacy);
+      if (scope === this.scope) {
+        continue;
+      }
+      const sessions = state.get<ReviewSession[]>(this.key(REVIEW_SESSIONS_KEY, scope), []);
+      if (sessions.length > 0) {
+        const current = this.getReviewSessions();
+        const known = new Set(current.map((s) => s.pullRequestId));
+        const adopted = sessions.filter((s) => !known.has(s.pullRequestId));
+        await state.update(this.key(REVIEW_SESSIONS_KEY), [...current, ...adopted]);
+      }
+      const drafts = state.get<DraftComment[]>(this.key(DRAFT_COMMENTS_KEY, scope), []);
+      if (drafts.length > 0) {
+        const current = this.getAllDraftComments();
+        const known = new Set(current.map((d) => d.pullRequestId));
+        const adopted = drafts.filter((d) => !known.has(d.pullRequestId));
+        await state.update(this.key(DRAFT_COMMENTS_KEY), [...current, ...adopted]);
+      }
+      await state.update(this.key(REVIEW_SESSIONS_KEY, scope), undefined);
+      await state.update(this.key(DRAFT_COMMENTS_KEY, scope), undefined);
+    }
   }
 
   getCached<T>(key: string): T | undefined {
@@ -104,4 +137,8 @@ export class StateStore {
   private getAllDraftComments(): DraftComment[] {
     return this.context.workspaceState.get<DraftComment[]>(this.key(DRAFT_COMMENTS_KEY), []);
   }
+}
+
+function scopeHash(scope: string): string {
+  return createHash('sha256').update(scope).digest('hex');
 }

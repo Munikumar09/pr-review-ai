@@ -81,6 +81,55 @@ describe('repository isolation', () => {
   });
 });
 
+describe('multi-repository state migration', () => {
+  function memento(values: Map<string, unknown>) {
+    return {
+      workspaceState: {
+        get: <T>(key: string, fallback: T) => values.get(key) ?? fallback,
+        update: async (key: string, value: unknown) => {
+          if (value === undefined) values.delete(key);
+          else values.set(key, value);
+        },
+      },
+    } as unknown as vscode.ExtensionContext;
+  }
+  const legacyScope = (repository: string) =>
+    JSON.stringify({ organization: 'org', project: 'proj', repository });
+
+  it('adopts single-repository state for configured repositories only, once', async () => {
+    const values = new Map<string, unknown>();
+    const context = memento(values);
+    const api = new StateStore(context, legacyScope('api'));
+    const other = new StateStore(context, legacyScope('other'));
+    const session = (pullRequestId: number, id: string) =>
+      ({ id, pullRequestId, findings: [] }) as unknown as ReviewSession;
+    await api.saveReviewSession(session(1, 'legacy-1'));
+    await api.saveReviewSession(session(2, 'legacy-2'));
+    await api.saveDraftComments(1, [
+      { id: 'd', pullRequestId: 1, content: 'draft', filePath: 'a.ts', createdAt: '' },
+    ]);
+    await other.saveReviewSession(session(3, 'unrelated'));
+
+    const project = new StateStore(
+      context,
+      JSON.stringify({ organization: 'org', project: 'proj' }),
+    );
+    await project.saveReviewSession(session(2, 'newer'));
+    await project.adoptLegacyScopes([legacyScope('api')]);
+
+    expect(project.getReviewSession(1)?.id).toBe('legacy-1');
+    expect(project.getReviewSession(2)?.id).toBe('newer');
+    expect(project.getReviewSession(3)).toBeUndefined();
+    expect(project.getDraftComments(1)).toHaveLength(1);
+    expect(api.getReviewSessions()).toEqual([]);
+    expect(other.getReviewSession(3)?.id).toBe('unrelated');
+
+    await project.clearReviewSession(1);
+    await project.adoptLegacyScopes([legacyScope('api')]);
+    expect(project.getReviewSession(1)).toBeUndefined();
+  });
+});
+
 describe('webview boundary', () => {
   it('escapes hostile content and finding IDs under a nonce-only script policy', () => {
     const create = vi.spyOn(vscode.window, 'createWebviewPanel');
@@ -181,7 +230,7 @@ describe('bounded untrusted content', () => {
     const cache = { getCached: () => undefined, setCached: () => {} } as unknown as StateStore;
     const client = {
       getLatestIterationCommits: async () => ({ sourceCommitId: 'new', targetCommitId: 'old' }),
-      getFileContent: async (_path: string, commit: string) =>
+      getFileContent: async (_pullRequestId: number, _path: string, commit: string) =>
         Array.from({ length: 3000 }, (_, i) => `${commit}-${i}`).join('\n'),
     } as unknown as AzureDevOpsClient;
     await expect(

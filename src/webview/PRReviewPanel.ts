@@ -41,7 +41,7 @@ export class PRReviewPanel {
   private readonly disposeEmitter = new vscode.EventEmitter<void>();
   readonly onDidDispose = this.disposeEmitter.event;
 
-  constructor(pullRequest: PullRequest) {
+  constructor(readonly pullRequest: PullRequest) {
     this.panel = vscode.window.createWebviewPanel(
       PRReviewPanel.viewType,
       `PR #${pullRequest.id}: ${pullRequest.title}`,

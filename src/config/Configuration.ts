@@ -8,7 +8,19 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 export interface AzureDevOpsConnectionConfig {
   organization: string;
   project: string;
-  repository: string;
+  /** Repository names (or ids) in the project; one PAT covers all of them. */
+  repositories: string[];
+}
+
+/** Azure DevOps repository names are case-insensitive; a configured entry may be a name or an id. */
+export function isRepositoryConfigured(
+  repositories: readonly string[],
+  repository: { id?: string; name: string },
+): boolean {
+  const candidates = [repository.name, repository.id]
+    .filter((value): value is string => !!value)
+    .map((value) => value.toLowerCase());
+  return repositories.some((configured) => candidates.includes(configured.toLowerCase()));
 }
 
 /**
@@ -28,23 +40,36 @@ export class Configuration {
   }
 
   getConnection(): AzureDevOpsConnectionConfig {
+    const listed = this.userSetting<unknown>(CONFIG_KEYS.repositories, []);
+    const legacy = this.userSetting<unknown>(CONFIG_KEYS.repository, '');
     return {
       organization: this.userSetting<string>(CONFIG_KEYS.organization, ''),
       project: this.userSetting<string>(CONFIG_KEYS.project, ''),
-      repository: this.userSetting<string>(CONFIG_KEYS.repository, ''),
+      repositories: normalizeRepositories([...(Array.isArray(listed) ? listed : []), legacy]),
     };
   }
 
   isConnectionConfigured(): boolean {
     const c = this.getConnection();
-    return Boolean(c.organization && c.project && c.repository);
+    return Boolean(c.organization && c.project && c.repositories.length > 0);
   }
 
   async setConnection(config: AzureDevOpsConnectionConfig): Promise<void> {
     const target = vscode.ConfigurationTarget.Global;
     await this.section.update(CONFIG_KEYS.organization, config.organization, target);
     await this.section.update(CONFIG_KEYS.project, config.project, target);
-    await this.section.update(CONFIG_KEYS.repository, config.repository, target);
+    await this.setRepositories(config.repositories);
+  }
+
+  async setRepositories(repositories: string[]): Promise<void> {
+    const target = vscode.ConfigurationTarget.Global;
+    await this.section.update(
+      CONFIG_KEYS.repositories,
+      normalizeRepositories(repositories),
+      target,
+    );
+    // Folded into `repositories` above; clearing it keeps a removed repository from coming back.
+    await this.section.update(CONFIG_KEYS.repository, undefined, target);
   }
 
   getAIProvider(): AIProviderId {
@@ -130,4 +155,18 @@ export class Configuration {
       }
     });
   }
+}
+
+/** Trims, drops non-strings/empties and de-duplicates case-insensitively, keeping first-seen order. */
+function normalizeRepositories(values: unknown[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const name = typeof value === 'string' ? value.trim() : '';
+    if (name && !seen.has(name.toLowerCase())) {
+      seen.add(name.toLowerCase());
+      result.push(name);
+    }
+  }
+  return result;
 }
