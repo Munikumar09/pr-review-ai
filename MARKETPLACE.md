@@ -205,4 +205,4 @@ Check **View → Output → Azure PR Review** for detailed (non-sensitive) logs.
 ---
 
 Source code, issue tracker and full developer documentation:
-[github.com/Munikumar09/ai-pr-review](https://github.com/Munikumar09/ai-pr-review)
+[github.com/Munikumar09/pr-review-ai](https://github.com/Munikumar09/pr-review-ai)
