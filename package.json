@@ -8,12 +8,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Munikumar09/ai-pr-review.git"
+    "url": "https://github.com/Munikumar09/pr-review-ai.git"
   },
   "bugs": {
-    "url": "https://github.com/Munikumar09/ai-pr-review/issues"
+    "url": "https://github.com/Munikumar09/pr-review-ai/issues"
   },
-  "homepage": "https://github.com/Munikumar09/ai-pr-review#readme",
+  "homepage": "https://github.com/Munikumar09/pr-review-ai#readme",
   "engines": {
     "vscode": "^1.85.0"
   },
