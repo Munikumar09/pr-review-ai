@@ -2,7 +2,7 @@
   "name": "azure-pr-review",
   "displayName": "Azure DevOps AI PR Review",
   "description": "Review Azure DevOps pull requests without leaving VS Code, with optional AI-assisted findings that require explicit human approval before publishing.",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "publisher": "munikumarmm",
   "icon": "media/marketplace-icon.png",
   "license": "MIT",

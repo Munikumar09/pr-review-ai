@@ -2,7 +2,7 @@
 
 All notable changes to the "Azure PR Review" extension are documented here.
 
-## [Unreleased]
+## [0.7.0]
 
 ### Added
 
