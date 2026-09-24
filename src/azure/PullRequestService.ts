@@ -14,15 +14,19 @@ export class PullRequestService {
     private readonly cache: StateStore,
   ) {}
 
-  async listPullRequests(group: PullRequestGroup, forceRefresh = false): Promise<PullRequest[]> {
-    const key = `pr-list:${group}`;
+  async listPullRequests(
+    repository: string,
+    group: PullRequestGroup,
+    forceRefresh = false,
+  ): Promise<PullRequest[]> {
+    const key = `pr-list:${repository.toLowerCase()}:${group}`;
     if (!forceRefresh) {
       const cached = this.cache.getCached<PullRequest[]>(key);
       if (cached) {
         return cached;
       }
     }
-    const prs = await this.client.getPullRequests(group);
+    const prs = await this.client.getPullRequests(repository, group);
     this.cache.setCached(key, prs, PR_LIST_TTL_MS);
     return prs;
   }

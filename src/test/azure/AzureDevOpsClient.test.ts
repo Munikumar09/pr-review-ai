@@ -17,7 +17,7 @@ describe('AzureDevOpsClient (no network)', () => {
     const client = new AzureDevOpsClient(auth('pat'), () => ({
       organization: '',
       project: 'p',
-      repository: 'r',
+      repositories: ['r'],
     }));
     await expect(client.getPullRequest(1)).rejects.toBeInstanceOf(ConfigurationError);
   });
@@ -26,9 +26,18 @@ describe('AzureDevOpsClient (no network)', () => {
     const client = new AzureDevOpsClient(auth(undefined), () => ({
       organization: 'org',
       project: 'p',
-      repository: 'r',
+      repositories: ['r'],
     }));
     await expect(client.verifyConnection()).rejects.toBeInstanceOf(AuthenticationError);
+  });
+
+  it('reports a configuration error when no repository is configured', async () => {
+    const client = new AzureDevOpsClient(auth('pat'), () => ({
+      organization: 'org',
+      project: 'p',
+      repositories: [],
+    }));
+    await expect(client.verifyConnection()).rejects.toBeInstanceOf(ConfigurationError);
   });
 
   it('picks up settings changed after construction (Configure after activation)', async () => {
@@ -36,7 +45,7 @@ describe('AzureDevOpsClient (no network)', () => {
     const client = new AzureDevOpsClient(auth(undefined), () => ({
       organization,
       project: 'p',
-      repository: 'r',
+      repositories: ['r'],
     }));
 
     await expect(client.verifyConnection()).rejects.toBeInstanceOf(ConfigurationError);
@@ -55,7 +64,7 @@ describe.skipIf(process.env.AZURE_E2E !== '1')(
       const client = new AzureDevOpsClient(auth('not-a-real-pat'), () => ({
         organization: 'microsoft',
         project: 'OS',
-        repository: 'os',
+        repositories: ['os'],
       }));
       await expect(client.verifyConnection()).rejects.toBeInstanceOf(AuthenticationError);
     }, 60_000);

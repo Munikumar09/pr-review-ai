@@ -21,6 +21,8 @@ import { MAX_AI_RESPONSE_BYTES } from '../../utils/securityLimits';
 
 const AVAILABILITY_CHECK_TIMEOUT_MS = 5_000;
 const REVIEW_TIMEOUT_MS = 180_000;
+/** Each CLI spawn costs ~1-3s of startup, so successful lookups are reused for this long. */
+const CLI_RESULT_CACHE_TTL_MS = 5 * 60_000;
 const MAX_OUTPUT_BYTES = MAX_AI_RESPONSE_BYTES;
 
 /**
@@ -35,6 +37,9 @@ export class OpenCodeProvider implements AIReviewProvider {
 
   private readonly logger = Logger.getInstance();
   private readonly parser = new ReviewResultParser();
+  /** Keyed by command so changing "azurePrReview.opencode.command" invalidates it. Only successes are cached. */
+  private availabilityCache?: { command: string; expiresAt: number };
+  private modelsCache?: { command: string; expiresAt: number; models: string[] };
 
   constructor(
     /** Read live so changing "azurePrReview.opencode.command" applies without a reload. */
@@ -46,8 +51,13 @@ export class OpenCodeProvider implements AIReviewProvider {
   ) {}
 
   async isAvailable(): Promise<boolean> {
+    const command = this.getCommand();
+    if (isFresh(this.availabilityCache, command)) {
+      return true;
+    }
     try {
       await this.run(['--version'], '', AVAILABILITY_CHECK_TIMEOUT_MS);
+      this.availabilityCache = { command, expiresAt: Date.now() + CLI_RESULT_CACHE_TTL_MS };
       return true;
     } catch (err) {
       this.logger.warn(`OpenCode CLI not detected via "${this.getCommand()} --version".`, err);
@@ -57,12 +67,20 @@ export class OpenCodeProvider implements AIReviewProvider {
 
   /** Lists models the configured OpenCode CLI currently has access to, as "provider/model" strings. */
   async listModels(): Promise<string[]> {
+    const command = this.getCommand();
+    if (this.modelsCache && isFresh(this.modelsCache, command)) {
+      return this.modelsCache.models;
+    }
     try {
       const stdout = await this.run(['models'], '', AVAILABILITY_CHECK_TIMEOUT_MS);
-      return stdout
+      const models = stdout
         .split('\n')
         .map((line) => line.trim())
         .filter((line) => line.length > 0);
+      if (models.length > 0) {
+        this.modelsCache = { command, expiresAt: Date.now() + CLI_RESULT_CACHE_TTL_MS, models };
+      }
+      return models;
     } catch (err) {
       this.logger.warn('Unable to list OpenCode models.', err);
       return [];
@@ -261,4 +279,11 @@ export class OpenCodeProvider implements AIReviewProvider {
       await fs.rm(cwd, { recursive: true, force: true });
     }
   }
+}
+
+function isFresh(
+  entry: { command: string; expiresAt: number } | undefined,
+  command: string,
+): boolean {
+  return !!entry && entry.command === command && entry.expiresAt > Date.now();
 }

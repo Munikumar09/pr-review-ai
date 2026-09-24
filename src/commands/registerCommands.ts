@@ -35,6 +35,7 @@ import {
   publishApprovedComments,
 } from './publishFinding';
 import { fixFinding } from './fixFinding';
+import { pickRepositories, selectRepositories } from './configureRepositories';
 import {
   selectAIProvider,
   selectAIModel,
@@ -110,26 +111,34 @@ export function registerCommands(
     if (project === undefined) {
       return;
     }
-    const repository = await vscode.window.showInputBox({
-      title: 'Azure DevOps repository',
-      value: config.getConnection().repository,
-      ignoreFocusOut: true,
-    });
-    if (repository === undefined) {
+    const previous = config.getConnection();
+    const sameProject =
+      organization.trim() === previous.organization && project.trim() === previous.project;
+    const repositories = await pickRepositories(
+      client,
+      organization.trim(),
+      project.trim(),
+      sameProject ? previous.repositories : [],
+    );
+    if (!repositories) {
       return;
     }
     await config.setConnection({
       organization: organization.trim(),
       project: project.trim(),
-      repository: repository.trim(),
+      repositories,
     });
     client.reset();
     prService.invalidateAll();
     prTree.refresh();
     vscode.window.showInformationMessage(
-      'Azure DevOps settings saved. Reload the window to apply the connection.',
+      sameProject
+        ? `Azure DevOps settings saved. Showing pull requests from: ${repositories.join(', ')}.`
+        : 'Azure DevOps settings saved. Reload the window to apply the connection.',
     );
   });
+
+  register('azurePrReview.selectRepositories', () => selectRepositories(config, client));
 
   register('azurePrReview.signIn', async () => {
     await auth.authenticate();
@@ -142,7 +151,7 @@ export function registerCommands(
     }
     if (!config.isConnectionConfigured()) {
       vscode.window.showInformationMessage(
-        'Token saved. Run "Azure PR Review: Configure Azure DevOps" to set organization, project and repository.',
+        'Token saved. Run "Azure PR Review: Configure Azure DevOps" to set organization, project and repositories.',
       );
       return;
     }
@@ -152,7 +161,7 @@ export function registerCommands(
     } catch (err) {
       logger.error('PAT verification failed.', err);
       vscode.window.showErrorMessage(
-        `${toUserMessage(err)} Check the organization/project/repository and that the PAT has Code (Read & Write) scope.`,
+        `${toUserMessage(err)} Check the organization, project and repositories, and that the PAT has Code (Read & Write) scope.`,
       );
     }
   });

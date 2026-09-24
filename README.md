@@ -89,7 +89,7 @@ side.
 
 - VS Code 1.85+
 - Node.js 24 LTS (for building and running the development tools)
-- An Azure DevOps organization, project, and Git repository you have access to
+- An Azure DevOps organization, project, and one or more Git repositories in it you have access to
 - A Personal Access Token with **Code (Read & Write)** and **Pull Request**
   scopes
 - Optional: the [OpenCode](https://opencode.ai) CLI on your `PATH` for the
@@ -132,9 +132,14 @@ Extension Development Host with the extension loaded.
 1. In Azure DevOps, go to **User Settings → Personal Access Tokens** and
    create a token with **Code (Read & Write)** scope (this covers Pull
    Request read/write).
-2. Run **Azure PR Review: Configure Azure DevOps** from the Command Palette
-   and enter your organization, project, and repository names.
-3. Run **Azure PR Review: Sign In** and paste the token when prompted.
+2. Run **Azure PR Review: Sign In** and paste the token when prompted.
+3. Run **Azure PR Review: Configure Azure DevOps** from the Command Palette,
+   enter your organization and project, then tick the repositories to review
+   (the list is fetched with your token; if you're not signed in yet you can
+   type names instead). One PAT covers every repository in the project.
+4. Add or remove repositories later with **Azure PR Review: Select
+   Repositories** (also in the Pull Requests view's `…` menu). With more than
+   one, the Pull Requests view groups PRs under a node per repository.
 
 ## Authentication
 
@@ -179,16 +184,23 @@ read from **user settings**. The OpenCode executable is a machine setting and ma
 be an absolute path or a command on `PATH`; workspace-relative executables are
 rejected. Repository `.vscode/settings.json` cannot override these choices.
 
-Changing the organization, project or repository requires **Reload Window**.
-Reviews and drafts are stored separately for each connection. Legacy review/draft
-state without a repository identity is retained in VS Code storage but is no
-longer restored automatically; re-create those reviews before publishing.
+Changing the organization or project requires **Reload Window**; adding or
+removing repositories applies immediately. Reviews and drafts are stored per
+organization/project (Azure DevOps PR ids are unique across an organization, so
+PRs from different repositories never collide). Every PR-scoped request is routed
+to that PR's own repository and refused if the repository isn't configured, so
+removing a repository also closes its open panels and cancels its reviews.
+State saved by earlier single-repository versions is moved into the
+organization/project scope on activation. Legacy review/draft state without a
+repository identity is retained in VS Code storage but is no longer restored
+automatically; re-create those reviews before publishing.
 
 | Setting | Default | Description |
 |---|---|---|
 | `azurePrReview.organization` | `""` | Azure DevOps organization |
 | `azurePrReview.project` | `""` | Azure DevOps project |
-| `azurePrReview.repository` | `""` | Azure DevOps repository |
+| `azurePrReview.repositories` | `[]` | Repositories in the project to review. Set via **Azure PR Review: Select Repositories** |
+| `azurePrReview.repository` | `""` | Deprecated single repository; still honored and folded into `repositories` |
 | `azurePrReview.ai.provider` | `"mock"` | `mock` \| `opencode` \| `copilot` |
 | `azurePrReview.ai.maxFindings` | `20` | Cap on findings kept per review |
 | `azurePrReview.ai.minConfidence` | `0.75` | Minimum confidence (0-1) to keep a finding |

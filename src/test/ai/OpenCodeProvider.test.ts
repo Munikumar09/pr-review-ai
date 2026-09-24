@@ -189,6 +189,46 @@ describe('OpenCodeProvider model configuration', () => {
     );
     await expect(provider.listModels()).resolves.toEqual([]);
   });
+
+  it('reuses successful availability and model lookups instead of respawning the CLI', async () => {
+    mockedSpawn.mockImplementation(() => fakeChild('opencode/big-pickle\n') as never);
+    let command = 'opencode';
+    const provider = new OpenCodeProvider(
+      () => command,
+      () => '',
+      new ReviewPromptBuilder(repoRoot),
+    );
+
+    expect(await provider.isAvailable()).toBe(true);
+    expect(await provider.isAvailable()).toBe(true);
+    expect(await provider.listModels()).toEqual(['opencode/big-pickle']);
+    expect(await provider.listModels()).toEqual(['opencode/big-pickle']);
+    expect(mockedSpawn).toHaveBeenCalledTimes(2);
+
+    command = 'opencode-v2';
+    await provider.isAvailable();
+    await provider.listModels();
+    expect(mockedSpawn).toHaveBeenCalledTimes(4);
+  });
+
+  it('does not cache a failed availability check', async () => {
+    mockedSpawn.mockImplementation(() => {
+      const child = fakeChild('');
+      child.stdin.end = vi.fn(() => {
+        queueMicrotask(() => child.emit('close', 1));
+      });
+      return child as never;
+    });
+    const provider = new OpenCodeProvider(
+      () => 'opencode',
+      () => '',
+      new ReviewPromptBuilder(repoRoot),
+    );
+
+    expect(await provider.isAvailable()).toBe(false);
+    mockedSpawn.mockImplementation(() => fakeChild('1.0.0') as never);
+    expect(await provider.isAvailable()).toBe(true);
+  });
 });
 
 describe('OpenCode security boundary', () => {

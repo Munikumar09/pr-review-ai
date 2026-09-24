@@ -2,6 +2,32 @@
 
 All notable changes to the "Azure PR Review" extension are documented here.
 
+## [Unreleased]
+
+### Added
+
+- **Multiple repositories per project**: configure any number of repositories
+  in one Azure DevOps project, all using the same PAT. **Configure Azure
+  DevOps** and the new **Select Repositories** command list the project's
+  repositories as a multi-select. The Pull Requests view shows a node per
+  repository when more than one is configured. New setting
+  `azurePrReview.repositories`; the old `azurePrReview.repository` is
+  deprecated but still honored.
+
+### Changed
+
+- Only an organization/project change requires a window reload; repositories
+  can be added or removed live. Review and draft state is now scoped to the
+  organization/project and existing single-repository state is migrated.
+- Pull request loading errors are shown inline under the affected repository
+  instead of as notifications.
+
+### Fixed
+
+- **Select AI Provider**/**Select AI Model** no longer freeze for several
+  seconds before appearing: the picker opens immediately and availability /
+  model lists load in the background. OpenCode CLI results are cached.
+
 ## [0.5.0]
 
 ### Added

@@ -99,6 +99,10 @@ export class MarkdownString {
   constructor(value = '') {
     this.value = value;
   }
+  appendText(value: string): MarkdownString {
+    this.value += value;
+    return this;
+  }
 }
 
 export enum CommentMode {
@@ -120,6 +124,35 @@ export class CancellationTokenSource {
     this.token.isCancellationRequested = true;
   }
   dispose(): void {}
+}
+
+export enum TreeItemCollapsibleState {
+  None = 0,
+  Collapsed = 1,
+  Expanded = 2,
+}
+
+export class ThemeIcon {
+  constructor(public readonly id: string) {}
+}
+
+export class TreeItem {
+  id?: string;
+  description?: string;
+  tooltip?: unknown;
+  contextValue?: string;
+  iconPath?: unknown;
+  command?: { command: string; title: string; arguments?: unknown[] };
+  constructor(
+    public label: string,
+    public collapsibleState: TreeItemCollapsibleState = TreeItemCollapsibleState.None,
+  ) {}
+}
+
+export enum ConfigurationTarget {
+  Global = 1,
+  Workspace = 2,
+  WorkspaceFolder = 3,
 }
 
 export const workspace = {

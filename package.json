@@ -35,6 +35,12 @@
         "category": "Azure PR Review"
       },
       {
+        "command": "azurePrReview.selectRepositories",
+        "title": "Select Repositories",
+        "category": "Azure PR Review",
+        "icon": "$(repo)"
+      },
+      {
         "command": "azurePrReview.signIn",
         "title": "Sign In",
         "category": "Azure PR Review"
@@ -253,14 +259,19 @@
           "group": "1_account@1"
         },
         {
-          "command": "azurePrReview.signIn",
+          "command": "azurePrReview.selectRepositories",
           "when": "view == azurePrReview.pullRequests",
           "group": "1_account@2"
         },
         {
-          "command": "azurePrReview.signOut",
+          "command": "azurePrReview.signIn",
           "when": "view == azurePrReview.pullRequests",
           "group": "1_account@3"
+        },
+        {
+          "command": "azurePrReview.signOut",
+          "when": "view == azurePrReview.pullRequests",
+          "group": "1_account@4"
         },
         {
           "command": "azurePrReview.selectAIProvider",
@@ -368,10 +379,21 @@
           "description": "Azure DevOps project name.",
           "scope": "application"
         },
+        "azurePrReview.repositories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true,
+          "default": [],
+          "markdownDescription": "Azure DevOps repositories in `#azurePrReview.project#` to review pull requests from. One PAT covers all of them. Set via **Azure PR Review: Select Repositories**.",
+          "scope": "application"
+        },
         "azurePrReview.repository": {
           "type": "string",
           "default": "",
           "description": "Azure DevOps repository name.",
+          "markdownDeprecationMessage": "Use `#azurePrReview.repositories#` instead. A value here is still honored and is moved into that list the next time repositories are selected.",
           "scope": "application"
         },
         "azurePrReview.ai.provider": {

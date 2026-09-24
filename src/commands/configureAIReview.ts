@@ -3,6 +3,7 @@ import { Configuration, AIProviderId } from '../config/Configuration';
 import { AIReviewProvider } from '../ai/AIReviewProvider';
 import { OpenCodeProvider } from '../ai/providers/OpenCodeProvider';
 import { CopilotProvider } from '../ai/providers/CopilotProvider';
+import { showLoadingQuickPick } from '../utils/loadingQuickPick';
 
 const PROVIDER_ORDER: AIProviderId[] = ['mock', 'opencode', 'copilot'];
 
@@ -17,33 +18,56 @@ interface ProviderQuickPickItem extends vscode.QuickPickItem {
   id: AIProviderId;
 }
 
-/** "Azure PR Review: Select AI Provider" - lets the user pick mock/OpenCode/Copilot. */
+/**
+ * "Azure PR Review: Select AI Provider" - lets the user pick mock/OpenCode/Copilot.
+ *
+ * The picker opens immediately; availability checks (an OpenCode CLI spawn, a Copilot model
+ * query - each can take seconds) run in parallel and fill in the descriptions as they finish.
+ */
 export async function selectAIProvider(
   config: Configuration,
   providers: Map<string, AIReviewProvider>,
 ): Promise<void> {
   const current = config.getAIProvider();
-  const items: ProviderQuickPickItem[] = [];
-  for (const id of PROVIDER_ORDER) {
-    const provider = providers.get(id);
-    const available = provider ? await provider.isAvailable() : false;
-    items.push({
-      id,
-      label: provider?.name ?? id,
-      description: [
-        id === current ? '(current)' : '',
-        id === 'mock' ? '' : available ? '$(check) available' : '$(warning) not detected',
-      ]
-        .filter(Boolean)
-        .join(' '),
-      detail: PROVIDER_DETAIL[id],
+  const availability = new Map<AIProviderId, boolean>();
+  const buildItems = (): ProviderQuickPickItem[] =>
+    PROVIDER_ORDER.map((id) => {
+      const status = availability.get(id);
+      return {
+        id,
+        label: providers.get(id)?.name ?? id,
+        description: [
+          id === current ? '(current)' : '',
+          id === 'mock'
+            ? ''
+            : status === undefined
+              ? '$(loading~spin) checking…'
+              : status
+                ? '$(check) available'
+                : '$(warning) not detected',
+        ]
+          .filter(Boolean)
+          .join(' '),
+        detail: PROVIDER_DETAIL[id],
+      };
     });
-  }
 
-  const choice = await vscode.window.showQuickPick(items, {
-    title: 'Azure PR Review: AI Provider',
-    placeHolder: `Current provider: ${providers.get(current)?.name ?? current}`,
+  const picker = showLoadingQuickPick<ProviderQuickPickItem>(
+    'Azure PR Review: AI Provider',
+    `Current provider: ${providers.get(current)?.name ?? current}`,
+  );
+  picker.setItems(buildItems(), { busy: true });
+
+  const checks = PROVIDER_ORDER.filter((id) => id !== 'mock').map(async (id) => {
+    const provider = providers.get(id);
+    availability.set(id, provider ? await provider.isAvailable().catch(() => false) : false);
+    if (!picker.isClosed()) {
+      picker.setItems(buildItems(), { busy: availability.size < PROVIDER_ORDER.length - 1 });
+    }
   });
+  void Promise.all(checks);
+
+  const [choice] = (await picker.result) ?? [];
   if (!choice || choice.id === current) {
     return;
   }
@@ -81,12 +105,17 @@ async function selectOpenCodeModel(
   provider: OpenCodeProvider,
 ): Promise<void> {
   const current = config.getOpenCodeModel();
-  const models = await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: 'Fetching OpenCode models…' },
-    () => provider.listModels(),
+  const picker = showLoadingQuickPick<vscode.QuickPickItem & { value: string }>(
+    'Azure PR Review: OpenCode Model',
+    'Fetching OpenCode models…',
   );
+  const models = await provider.listModels();
+  if (picker.isClosed()) {
+    return; // dismissed while loading
+  }
 
   if (models.length === 0) {
+    picker.close();
     const manual = await vscode.window.showInputBox({
       title: 'OpenCode model (provider/model)',
       prompt:
@@ -113,10 +142,8 @@ async function selectOpenCodeModel(
     },
     ...models.map((m) => ({ value: m, label: m, description: m === current ? '(current)' : '' })),
   ];
-  const choice = await vscode.window.showQuickPick(items, {
-    title: 'Azure PR Review: OpenCode Model',
-    placeHolder: current || 'Using OpenCode default',
-  });
+  picker.setItems(items, { placeholder: current || 'Using OpenCode default' });
+  const [choice] = (await picker.result) ?? [];
   if (!choice) {
     return;
   }
@@ -176,8 +203,16 @@ export async function toggleAIAttribution(config: Configuration): Promise<void> 
 
 async function selectCopilotModel(config: Configuration, provider: CopilotProvider): Promise<void> {
   const current = config.getCopilotModel();
+  const picker = showLoadingQuickPick<vscode.QuickPickItem & { value: string }>(
+    'Azure PR Review: Copilot Model',
+    'Fetching Copilot models…',
+  );
   const models = await provider.listAvailableModels();
+  if (picker.isClosed()) {
+    return; // dismissed while loading
+  }
   if (models.length === 0) {
+    picker.close();
     vscode.window.showWarningMessage(
       'No Copilot chat models are currently available. Make sure GitHub Copilot Chat is installed and you are signed in.',
     );
@@ -192,10 +227,8 @@ async function selectCopilotModel(config: Configuration, provider: CopilotProvid
       description: [m.family, m.id === current ? '(current)' : ''].filter(Boolean).join(' · '),
     })),
   ];
-  const choice = await vscode.window.showQuickPick(items, {
-    title: 'Azure PR Review: Copilot Model',
-    placeHolder: current || 'Using first available model',
-  });
+  picker.setItems(items, { placeholder: current || 'Using first available model' });
+  const [choice] = (await picker.result) ?? [];
   if (!choice) {
     return;
   }
